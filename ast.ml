@@ -129,6 +129,13 @@ module Meta = struct
 		| Unsafe
 		| Usage
 		| Used
+		| C
+		| Category
+		| GetterBody
+		| Import
+		| Framework
+		| Selector
+		| Weak
 		| Last
 		(* do not put any custom metadata after Last *)
 		| Dollar of string

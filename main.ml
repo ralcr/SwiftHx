@@ -117,7 +117,7 @@ let htmlescape s =
 	s
 
 let reserved_flags = [
-	"cross";"flash8";"js";"neko";"flash";"php";"cpp";"cs";"java";
+	"cross";"flash8";"js";"neko";"flash";"php";"cpp";"cs";"java";"objc";
 	"as3";"swc";"macro";"sys"
 	]
 
@@ -807,7 +807,8 @@ try
 	with
 		Not_found ->
 			if Sys.os_type = "Unix" then
-				com.class_path <- ["/usr/lib/haxe/std/";"/usr/local/lib/haxe/std/";"/usr/lib/haxe/extraLibs/";"/usr/local/lib/haxe/extraLibs/";"";"/"]
+				com.class_path <- ["/Users/Cristi/Documents/haxe/std/";"";"/"]
+				(* com.class_path <- ["/usr/lib/haxe/std/";"/usr/local/lib/haxe/std/";"/usr/lib/haxe/extraLibs/";"/usr/local/lib/haxe/extraLibs/";"";"/"] *)
 			else
 				let base_path = normalize_path (Extc.get_real_path (try executable_path() with _ -> "./")) in
 				com.class_path <- [base_path ^ "std/";base_path ^ "extraLibs/";""]);
@@ -1001,6 +1002,41 @@ try
 			com.php_prefix <- Some f;
 			Common.define com Define.PhpPrefix;
 		),"<name> : prefix all classes with given name");
+		(* ObjC related parameters. *)
+		("-objc-platform",Arg.String (fun v ->
+			com.objc_platform <- v;
+		),"<platform> : set the platform. e.g. iphone, ipad, ios, osx, generic");
+		("-objc-version",Arg.Float (fun v ->
+			com.objc_version <- v;
+		),"<version> : set the cocoa sdk version. e.g. 4-6.1 for iOS, 10.7-10.8 for OSX");
+		("-objc-bundle-version",Arg.Float (fun v ->
+			com.objc_bundle_version <- v;
+		),"<version> : set the version of the app. e.g. 1.0");
+		("-objc-identifier",Arg.String (fun v ->
+			com.objc_identifier <- Some v;
+		),"<identifier> : set the identifier for the app. e.g. com.domain.appname");
+		("-objc-owner",Arg.String (fun v ->
+			com.objc_owner <- Some v;
+		),"<owner> : set the owner name of the app");
+		("-objc-bundle-name",Arg.String (fun v ->
+			com.objc_bundle_name <- Some v;
+		),"<name> : set the name of the executable");
+		("-objc-supporting-files",Arg.String (fun path ->
+			com.objc_supporting_files <- Some (normalize_path path);
+		),"<path> : set a custom SupportingFiles folder that contains resources and custom project files.");
+		("-objc-lib",Arg.String (fun path ->
+			com.objc_libs <- path :: com.objc_libs
+		),"<name> : add a linker flag to the app. e.g. ObjC");
+		("-objc-framework",Arg.String (fun name ->
+			com.objc_frameworks <- name :: com.objc_frameworks
+		),"<name> : add a linker flag to the app. e.g. ObjC");
+		("-objc-linker-flag",Arg.String (fun name ->
+			com.objc_linker_flags <- name :: com.objc_linker_flags
+		),"<path> : add a custom framework");
+		("-ios-orientation",Arg.String (fun v ->
+			com.ios_orientations <- v :: com.ios_orientations
+		),"<orientation> : add iOS orientations. e.g. UIInterfaceOrientationPortrait");
+		(* ObjC ends *)
 		("--remap", Arg.String (fun s ->
 			let pack, target = (try ExtString.String.split s ":" with _ -> raise (Arg.Bad "Invalid remap format, expected source:target")) in
 			com.package_rules <- PMap.add pack (Remap target) com.package_rules;

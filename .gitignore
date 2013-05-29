@@ -37,6 +37,7 @@
 /tests/unit/cs
 /tests/unit/cs_unsafe
 /tests/unit/dump
+/tests/unit/objc
 
 /tests/unit/native_java/obj
 /tests/unit/native_java/cmd
@@ -46,3 +47,4 @@
 
 /haxe.sublime*
 build.bat
+.DS_Store
