@@ -1199,6 +1199,9 @@ try
       );
 			Genjava.before_generate com;
 			add_std "java"; "java"
+		| ObjC ->
+			add_std "objc";
+			"m"
 	) in
 	(* if we are at the last compilation step, allow all packages accesses - in case of macros or opening another project file *)
 	if com.display && not ctx.has_next then com.package_rules <- PMap.foldi (fun p r acc -> match r with Forbidden -> acc | _ -> PMap.add p r acc) com.package_rules PMap.empty;
@@ -1306,6 +1309,9 @@ try
 		| Java ->
 			Common.log com ("Generating Java in : " ^ com.file);
 			Genjava.generate com;
+		| ObjC ->
+			Common.log com ("Generating Objective-C in : " ^ com.file);
+			Genobjc.generate com;
 		);
 	end;
 	Sys.catch_break false;
