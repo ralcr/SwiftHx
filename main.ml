@@ -858,6 +858,10 @@ try
 			cp_libs := "hxjava" :: !cp_libs;
 			set_platform Java dir;
 		),"<directory> : generate Java code into target directory");
+		("-objc",Arg.String (fun dir ->
+			(* cp_libs := "hxobjc" :: !cp_libs; *)
+			set_platform ObjC dir;
+		),"<directory> : generate Objective-C code into target directory");
 		("-xml",Arg.String (fun file ->
 			Parser.use_doc := true;
 			xml_out := Some file
