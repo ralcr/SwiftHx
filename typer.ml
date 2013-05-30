@@ -364,7 +364,7 @@ let rec unify_min_raise ctx (el:texpr list) : t =
 				(match List.rev el with
 				| [] -> false
 				| e :: _ -> chk_null e)
-			| TParenthesis e -> chk_null e
+			| TParenthesis e | TMeta(_,e) -> chk_null e
 			| _ -> false
 		in
 
@@ -762,6 +762,9 @@ let rec acc_get ctx g p =
 		assert false
 
 let error_require r p =
+	if r = "" then
+		error "This field is not available with the current compilation flags" p
+	else
 	let r = if r = "sys" then
 		"a system platform (php,neko,cpp,etc.)"
 	else try
@@ -1343,7 +1346,7 @@ let unify_int ctx e k =
 		| TArray({ etype = t } as e,_) -> is_dynamic_array t || maybe_dynamic_rec e t
 		| TField({ etype = t } as e,f) -> is_dynamic_field t (field_name f) || maybe_dynamic_rec e t
 		| TCall({ etype = t } as e,_) -> is_dynamic_return t || maybe_dynamic_rec e t
-		| TParenthesis e -> maybe_dynamic_mono e
+		| TParenthesis e | TMeta(_,e) -> maybe_dynamic_mono e
 		| TIf (_,a,Some b) -> maybe_dynamic_mono a || maybe_dynamic_mono b
 		| _ -> false
 	and maybe_dynamic_rec e t =
@@ -2494,9 +2497,10 @@ and type_expr ctx (e,p) (with_type:with_type) =
 					| WithTypeResume _ -> raise (WithTypeError (l,p))
 					| _ -> raise (Error (Unify l,p))
 				in
-				PMap.iter (fun n cf ->
-					if not (Meta.has Meta.Optional cf.cf_meta) && not (PMap.mem n !fields) then unify_error [has_no_field t n] p;
-				) a.a_fields;
+				(match PMap.foldi (fun n cf acc -> if not (Meta.has Meta.Optional cf.cf_meta) && not (PMap.mem n !fields) then n :: acc else acc) a.a_fields [] with
+					| [] -> ()
+					| [n] -> unify_error [Unify_custom ("Object requires field " ^ n)] p
+					| nl -> unify_error [Unify_custom ("Object requires fields: " ^ (String.concat ", " nl))] p);
 				(match !extra_fields with
 				| [] -> ()
 				| _ -> unify_error (List.map (fun n -> has_extra_field t n) !extra_fields) p);

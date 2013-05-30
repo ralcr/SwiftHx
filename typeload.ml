@@ -209,6 +209,7 @@ let type_function_param ctx t e opt p =
 		let e = (match e with None -> Some (EConst (Ident "null"),p) | _ -> e) in
 		ctx.t.tnull t, e
 	else
+		let t = match e with Some (EConst (Ident "null"),p) -> ctx.t.tnull t | _ -> t in
 		t, e
 
 let type_var_field ctx t e stat p =
@@ -864,7 +865,7 @@ let rec return_flow ctx e =
 	let return_flow = return_flow ctx in
 	match e.eexpr with
 	| TReturn _ | TThrow _ -> ()
-	| TParenthesis e ->
+	| TParenthesis e | TMeta(_,e) ->
 		return_flow e
 	| TBlock el ->
 		let rec loop = function
@@ -1036,8 +1037,9 @@ let type_function ctx args ret fmode f do_display p =
 	ctx.opened <- [];
 	let e = match f.f_expr with None -> error "Function body required" p | Some e -> e in
 	let e = if not do_display then type_expr ctx e NoValue else try
+		if Common.defined ctx.com Define.NoCOpt then raise Exit;
 		type_expr ctx (Optimizer.optimize_completion_expr e) NoValue
-	with DisplayTypes [TMono _] | Parser.TypePath (_,None) ->
+	with DisplayTypes [TMono _] | Parser.TypePath (_,None) | Exit ->
 		type_expr ctx e NoValue
 	in
 	let rec loop e =
@@ -1714,13 +1716,15 @@ let init_class ctx c p context_init herits fields =
 		| (Meta.Require,conds,_) :: l ->
 			let rec loop = function
 				| [] -> check_require l
-				| [EConst (String _),_] -> check_require l
-				| (EConst (Ident i),_) :: l ->
-					if not (Common.raw_defined ctx.com i) then
-						Some (i,(match List.rev l with (EConst (String msg),_) :: _ -> Some msg | _ -> None))
+				| e :: l ->
+					let sc = match fst e with
+						| EConst (Ident s) -> s
+						| _ -> ""
+					in
+					if not (Parser.is_true (Parser.eval ctx.com e)) then
+						Some (sc,(match List.rev l with (EConst (String msg),_) :: _ -> Some msg | _ -> None))
 					else
 						loop l
-				| _ -> error "Invalid require identifier" p
 			in
 			loop conds
 		| _ :: l ->
