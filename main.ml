@@ -1012,6 +1012,8 @@ try
 		),"<platform> : set the platform. e.g. iphone, ipad, ios, osx, generic");
 		("-objc-version",Arg.Float (fun v ->
 			com.objc_version <- v;
+			(* Common.raw_define com (Printf.sprintf "objc_version=%f.0" v); *)
+			Common.raw_define com "objc_version=5.0";
 		),"<version> : set the cocoa sdk version. e.g. 4-6.1 for iOS, 10.7-10.8 for OSX");
 		("-objc-bundle-version",Arg.Float (fun v ->
 			com.objc_bundle_version <- v;
@@ -1204,6 +1206,17 @@ try
 			Genjava.before_generate com;
 			add_std "java"; "java"
 		| ObjC ->
+			let rec loop = function
+				| [] -> ()
+				| (v,def) :: l ->
+					if v >= com.objc_version then begin
+						print_endline ("ios" ^ def);
+						Common.raw_define com ("ios" ^ def);
+					end;
+					loop l
+			in
+			loop Common.objc_ios_versions;
+			Common.raw_define com "ios";
 			add_std "objc";
 			"m"
 	) in

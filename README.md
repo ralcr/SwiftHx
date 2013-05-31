@@ -14,3 +14,9 @@ This fork contains the Hxobjc target.
         git submodule update
 
  2. Follow the [documentation on building Haxe for your platform](http://haxe.org/doc/build).
+
+ In case i forget this is how i merge the haxe repository in my fork
+ 
+	git fetch upstream
+	git merge upstream/development
+
