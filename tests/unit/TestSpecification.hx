@@ -121,7 +121,7 @@ enum EVMTest {
 	EVME(?n:EVMTest);
 }
 
-#if !macro
+#if (!macro && !objc)
 @:build(unit.UnitBuilder.build("unitstd"))
 #end
 class TestSpecification extends Test {

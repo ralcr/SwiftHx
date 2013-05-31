@@ -22,7 +22,7 @@
 package haxe;
 
 /**
-	Elements return by `CallStack` methods.
+	Elements return by [Stack] methods.
 **/
 enum StackItem {
 	CFunction;
@@ -80,6 +80,9 @@ class CallStack {
 			a.shift(); // remove Stack.callStack()
 			(untyped Error).prepareStackTrace = oldValue;
 			return a;
+		#elseif objc
+			var s:Array<String> = objc.foundation.NSThread.callStackSymbols();
+			return makeStack(s);
 		#else
 			return []; // Unsupported
 		#end
@@ -216,6 +219,19 @@ class CallStack {
 			}
 			return m;
 		#elseif cpp
+			var stack : Array<String> = s;
+			var m = new Array<StackItem>();
+			for(func in stack) {
+				var words = func.split("::");
+				if (words.length==0)
+					m.unshift(CFunction)
+				else if (words.length==2)
+					m.unshift(Method(words[0],words[1]));
+				else if (words.length==4)
+					m.unshift(FilePos( Method(words[0],words[1]),words[2],Std.parseInt(words[3])));
+			}
+			return m;
+		#elseif objc
 			var stack : Array<String> = s;
 			var m = new Array<StackItem>();
 			for(func in stack) {

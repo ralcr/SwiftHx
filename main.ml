@@ -807,7 +807,7 @@ try
 	with
 		Not_found ->
 			if Sys.os_type = "Unix" then
-				com.class_path <- ["/Users/Cristi/Documents/haxe/std/";"";"/"]
+				com.class_path <- ["/Users/Cristi/Documents/haxecompiler/haxe/std/";"";"/"]
 				(* com.class_path <- ["/usr/lib/haxe/std/";"/usr/local/lib/haxe/std/";"/usr/lib/haxe/extraLibs/";"/usr/local/lib/haxe/extraLibs/";"";"/"] *)
 			else
 				let base_path = normalize_path (Extc.get_real_path (try executable_path() with _ -> "./")) in
@@ -859,7 +859,7 @@ try
 			set_platform Java dir;
 		),"<directory> : generate Java code into target directory");
 		("-objc",Arg.String (fun dir ->
-			(* cp_libs := "hxobjc" :: !cp_libs; *)
+			cp_libs := "hxcocoa" :: !cp_libs;
 			set_platform ObjC dir;
 		),"<directory> : generate Objective-C code into target directory");
 		("-xml",Arg.String (fun file ->

@@ -28,9 +28,9 @@ package haxe;
 class Log {
 
 	/**
-		Outputs `v` in a platform-dependent way.
+		Outputs [v] in a platform-dependent way.
 
-		The second parameter `infos` is injected by the compiler and contains
+		The second parameter [infos] is injected by the compiler and contains
 		information about the position where the trace() call was made.
 
 		This method can be rebound to a custom function:
@@ -94,6 +94,11 @@ class Log {
 			#elseif java
 			untyped __java__("java.lang.System.out.println(str)");
 			#end
+		#elseif objc
+			untyped __objc__ ("printf(\"%s:%s: %s\\n\",
+		   [[infos objectForKey:@\"fileName\"] cStringUsingEncoding:NSStringEncodingConversionAllowLossy],
+		   [[infos objectForKey:@\"lineNumber\"] cStringUsingEncoding:NSStringEncodingConversionAllowLossy],
+		   [[v description] cStringUsingEncoding:NSStringEncodingConversionAllowLossy])");
 		#end
 	}
 
@@ -112,7 +117,7 @@ class Log {
 
 	#if flash
 	/**
-		Sets the color of the trace output to `rgb`.
+		Sets the color of the trace output to [rgb].
 	**/
 	public static dynamic function setColor( rgb : Int ) {
 		untyped flash.Boot.__set_trace_color(rgb);
