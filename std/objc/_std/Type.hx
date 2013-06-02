@@ -36,21 +36,21 @@ enum ValueType {
 }
 
 @:include("objc/runtime.h")
-@:coreApi class Type {
+@:coreApi
+class Type {
 	public static function getClass<T>( o : T ) : Class<T> untyped {
-			if (o==null || !Reflect.isObject(o))  return null;
-			var c = o.__GetClass();
-			switch(c.toString())
-			{
-				case "__Anon" : return null;
-				case "Class" : return null;
-			}
-			return c;
+		if (o==null || !Reflect.isObject(o))  return null;
+		var c = o.__class();
+		switch(c.toString()){
+			case "__Anon" : return null;
+			case "Class" : return null;
+		}
+		return c;
 	}
 
 	public static function getEnum( o : EnumValue ) : Enum<Dynamic> untyped {
 		if (o==null) return null;
-		return untyped o.__GetClass();
+		return untyped o.__class();
 	}
 
 
@@ -121,13 +121,13 @@ enum ValueType {
 	public static function typeof( v : Dynamic ) : ValueType untyped {
 /*		http://stackoverflow.com/questions/2518761/get-type-of-nsnumber*/
 		if (v==null) return TNull;
-/*		if (v.isKindOfClass ( Bool.class() )) return TBool;
-		else if (v.isKindOfClass ( Int.class() )) return TInt;
-		else if (v.isKindOfClass ( Float.class() )) return TFloat;
-		else if (v.isKindOfClass ( TFunction.class() )) return TFunction;
-		else if (v.isKindOfClass ( TObject.class() )) return TObject;
-		else if (v.isKindOfClass ( Int.class() )) return TEnum ( v.class() );*/
-		//return TClass ( v.class() );
+		if (v.isKindOfClass ( Bool.__class() )) return TBool;
+		else if (v.isKindOfClass ( Int.__class() )) return TInt;
+		else if (v.isKindOfClass ( Float.__class() )) return TFloat;
+		else if (v.isKindOfClass ( TFunction.__class() )) return TFunction;
+		else if (v.isKindOfClass ( TObject.__class() )) return TObject;
+		else if (v.isKindOfClass ( Int.__class() )) return TEnum ( v.__class() );
+		//return TClass ( v.__class() );
 		return TNull;
 	}
 
@@ -149,18 +149,16 @@ enum ValueType {
 	}
 
 	public static function allEnums<T>( e : Enum<T> ) : Array<T> {
-      var names:Array<String> =  untyped e.GetClassFields();
+		var names:Array<String> =  untyped e.GetClassFields();
 		var enums = new Array<T>();
-      for(name in names)
-      {
-         try {
-            var result:T = untyped e.mConstructEnum(name,null);
-            enums.push( result );
-         } catch ( invalidArgCount:String) {
-         }
-      }
+		for(name in names){
+			try {
+				var result:T = untyped e.mConstructEnum(name,null);
+				enums.push( result );
+			} catch ( invalidArgCount:String) {
+			}
+		}
 		return enums;
 	}
-
 }
 

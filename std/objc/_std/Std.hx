@@ -25,9 +25,7 @@
 
 @:coreApi class Std {
 	public static function is( v : Dynamic, t : Dynamic ) : Bool {
-		//return v.isEqual ( t );
-		//return untyped v.isKindOfClass ( untyped t.classs() );
-		return false;
+		return untyped v.isKindOfClass ( t.__class() );
 	}
 
 	public static function string( s : Dynamic ) : String {
