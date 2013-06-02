@@ -539,8 +539,10 @@ let remapHaxeTypeToObjc ctx is_static path pos =
 		| "Array" -> "NSMutableArray"
 		| "Void" -> "void"
 		| _ -> name)
-	| (["haxe"],"Int32") when not is_static -> "int"
-	| (pack,name) -> name
+	| (pack,name) ->
+		(match name with
+		| "T" -> "id"
+		| _ -> name)
 ;;
 
 (* Convert function names that can't be written in c++ ... *)
@@ -1186,8 +1188,7 @@ and generateExpression ctx e =
 						)
 				| TEnum _ -> ctx.writer#write "CASTTenum";
 				| TInst (tc, tp) ->
-					List.iter (fun tt ->
-						(match tt with
+					List.iter (fun tt -> (match tt with
 						| TMono t -> ctx.writer#write "CASTTMono";
 							(match !t with
 								| Some tt ->(* ctx.writer#write "-TMonoSome-"; *)
@@ -1198,8 +1199,9 @@ and generateExpression ctx e =
 							)
 						| TEnum _ -> ctx.writer#write "CASTTenum";
 						| TInst (tc, tp) ->
-							(* let t = (typeToString ctx e.etype e.epos) in *)
-							ctx.writer#write (remapHaxeTypeToObjc ctx false tc.cl_path e.epos);
+							let t = (remapHaxeTypeToObjc ctx false tc.cl_path e.epos) in
+							ctx.writer#write t;
+							if t = "id" then pointer := false;
 						| TType _ -> ctx.writer#write "CASTTType--";
 						| TFun _ -> ctx.writer#write "CASTTFun";
 						| TAnon _ -> ctx.writer#write "CASTTAnon";
@@ -1209,7 +1211,7 @@ and generateExpression ctx e =
 							pointer := isPointer n;
 						| TLazy _ -> ctx.writer#write "CASTTLazyExprInst";
 						| TAbstract _ -> ctx.writer#write "CASTTAbstract";
-						);
+					);
 					)tp;
 				| TType (td,tp) -> ctx.writer#write (snd td.t_path);
 				(* | TFun (tc, tp) -> ctx.writer#write ("TFun"^(snd tc.cl_path)); *)

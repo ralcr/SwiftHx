@@ -1,5 +1,5 @@
 /*
- * Copyright (C)2005-2012 Haxe Foundation
+ * Copyright (C)2013 Hxobjc
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -21,17 +21,19 @@
  */
 class HxIterator<T> {
 	
-	public var p :Int;
+	var p :Int;
+	public var arr :Array<T>;
+	public var len :Int;
 	
 	public function new () {
 		p = 0;
 	}
 	public function hasNext():Bool {
-		return p < ;
+		return p < len;
 	}
 	public function next():T {
-		var i = [self objectAtIndex:p];
+		var obj:T = arr[p];
 		p += 1;
-		return i;
+		return obj;
 	}
 }
