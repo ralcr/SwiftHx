@@ -26,6 +26,9 @@
 	If the first argument to any of the methods is null, the result is
 	unspecified.
 **/
+#if objc
+import objc.foundation.NSCharacterSet;	
+#end
 #if cs
 @:keep
 #end
@@ -51,6 +54,8 @@ class StringTools {
 			catch (e:Dynamic) throw e;
 		#elseif cs
 			return untyped __cs__("System.Uri.EscapeUriString(s)");
+		#elseif objc
+			return untyped __objc__("[s stringByAddingPercentEscapesUsingEncoding:NSASCIIStringEncoding]");
 		#else
 			return null;
 		#end
@@ -76,6 +81,8 @@ class StringTools {
 			catch (e:Dynamic) throw e;
 		#elseif cs
 			return untyped __cs__("System.Uri.UnescapeDataString(s)");
+		#elseif objc
+			return untyped __objc__("[s stringByReplacingPercentEscapesUsingEncoding:NSUTF8StringEncoding]");
 		#else
 			return null;
 		#end
@@ -126,6 +133,8 @@ class StringTools {
 		return untyped s.startsWith(start);
 		#elseif cs
 		return untyped s.StartsWith(start);
+		#elseif objc
+		return untyped s.hasPrefix(start);
 		#else
 		return( s.length >= start.length && s.substr(0, start.length) == start );
 		#end
@@ -143,6 +152,8 @@ class StringTools {
 		return untyped s.endsWith(end);
 		#elseif cs
 		return untyped s.EndsWith(end);
+		#elseif objc
+		return untyped s.hasSuffix(end);
 		#else
 		var elen = end.length;
 		var slen = s.length;
@@ -225,6 +236,8 @@ class StringTools {
 		return untyped s.Trim();
 		#elseif java
 		return untyped s.trim();
+		#elseif objc
+		return untyped s.stringByTrimmingCharactersInSet ( NSCharacterSet.whitespaceCharacterSet()).mutableCopy();
 		#else
 		return ltrim(rtrim(s));
 		#end
@@ -296,6 +309,8 @@ class StringTools {
 			return s.split(sub).join(by);
 		else
 			return untyped s.Replace(sub, by);
+		#elseif objc
+			return untyped __objc__("[s replaceOccurrencesOfString:sub withString:by options:nil range:nil]");
 		#else
 		return s.split(sub).join(by);
 		#end
@@ -355,6 +370,8 @@ class StringTools {
 			#else
 		return (untyped s).charCodeAt(index);
 			#end
+		#elseif objc
+		return untyped s.characterAtIndex(index);
 		#else
 		return s.cca(index);
 		#end
@@ -376,6 +393,8 @@ class StringTools {
 		return c == -1;
 		#elseif java
 		return c == -1;
+		#elseif objc
+		return c == -1;// TODO: Not sure yet
 		#else
 		return false;
 		#end

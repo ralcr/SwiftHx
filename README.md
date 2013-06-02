@@ -42,7 +42,7 @@ The starting point of your app should look like this, everything else is ignored
 		return new UIApplicationMain ( AppDelegate );
 	}
 
-Where the AppDelegate.hx conforms with the UIApplicationDelegate.
+Where the AppDelegate.hx conforms with the UIApplicationDelegate. This is the main method of your app, you should put the code before returning.
 
 	class AppDelegate extends UIResponder implements UIApplicationDelegate {
 		public function application (application:UIApplication, didFinishLaunchingWithOptions:NSDictionary) :Bool {
@@ -50,9 +50,6 @@ Where the AppDelegate.hx conforms with the UIApplicationDelegate.
 			return true;
 		}
 	}
-	
-This is the main method of your app, you should put the code before returning.
-
 
 
 In case i forget this is how i merge the HF/haxe repository in my local fork
