@@ -28,14 +28,14 @@ package sys.net;
 @:coreApi
 class Host {
 
-	public var ip(default,null) : haxe.Int32;
+	public var ip(default,null) : Int;
 
 	public function new( name : String ) : Void {
 		ip = host_resolve(name);
 	}
 
 	public function toString() : String {
-		return new String(host_to_string(ip));
+		return new String(ip);
 	}
 
 	public function reverse() : String {
@@ -45,14 +45,5 @@ class Host {
 	public static function localhost() : String {
 		return new String(host_local());
 	}
-
-	static function __init__() : Void {
-		cpp.Lib.load("std","socket_init",0)();
-	}
-
-	private static var host_resolve = cpp.Lib.load("std","host_resolve",1);
-	private static var host_reverse = cpp.Lib.load("std","host_reverse",1);
-	private static var host_to_string = cpp.Lib.load("std","host_to_string",1);
-	private static var host_local = cpp.Lib.load("std","host_local",0);
 
 }

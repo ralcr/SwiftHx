@@ -21,8 +21,6 @@
  * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
  * DAMAGE.
- *
- * Contributor: Lee McColl Sylvester
  */
 package sys.net;
 
@@ -71,10 +69,6 @@ private class SocketInput extends haxe.io.Input {
 		if( __s != null ) socket_close(__s);
 	}
 
-	private static var socket_recv = cpp.Lib.load("std","socket_recv",4);
-	private static var socket_recv_char = cpp.Lib.load("std","socket_recv_char",1);
-	private static var socket_close = cpp.Lib.load("std","socket_close",1);
-
 }
 
 private class SocketOutput extends haxe.io.Output {
@@ -113,10 +107,6 @@ private class SocketOutput extends haxe.io.Output {
 		super.close();
 		if( __s != null ) socket_close(__s);
 	}
-
-	private static var socket_close = cpp.Lib.load("std","socket_close",1);
-	private static var socket_send_char = cpp.Lib.load("std","socket_send_char",2);
-	private static var socket_send = cpp.Lib.load("std","socket_send",4);
 
 }
 
@@ -229,20 +219,5 @@ class Socket {
 			others: neko_array[2]
 		};
 	}
-
-	private static var socket_new = cpp.Lib.load("std","socket_new",1);
-	private static var socket_close = cpp.Lib.load("std","socket_close",1);
-	private static var socket_write = cpp.Lib.load("std","socket_write",2);
-	private static var socket_read = cpp.Lib.load("std","socket_read",1);
-	private static var socket_connect = cpp.Lib.load("std","socket_connect",3);
-	private static var socket_listen = cpp.Lib.load("std","socket_listen",2);
-	private static var socket_select = cpp.Lib.load("std","socket_select",4);
-	private static var socket_bind = cpp.Lib.load("std","socket_bind",3);
-	private static var socket_accept = cpp.Lib.load("std","socket_accept",1);
-	private static var socket_peer = cpp.Lib.load("std","socket_peer",1);
-	private static var socket_host = cpp.Lib.load("std","socket_host",1);
-	private static var socket_set_timeout = cpp.Lib.load("std","socket_set_timeout",2);
-	private static var socket_shutdown = cpp.Lib.load("std","socket_shutdown",3);
-	private static var socket_set_blocking = cpp.Lib.load("std","socket_set_blocking",2);
 
 }
