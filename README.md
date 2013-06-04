@@ -4,7 +4,7 @@
 This fork contains the Hxobjc target. 
 
 
-## Building from source
+## Building from sources
 
  1. Clone the repository using git. Be sure to initialize and fetch the submodules.
 
