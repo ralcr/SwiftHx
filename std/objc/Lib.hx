@@ -43,6 +43,10 @@ class Lib {
 		untyped __objc__ ("printf ( \"\\n\" )");
 	}
 	
+	public static function thread (func : Dynamic) : Void {
+		
+	}
+	
 /*	public static function getURL (url :String, ?target : String) : Bool {
 		return untyped __objc__ ("[[UIApplication sharedApplication] openURL:[NSURL URLWithString:url]]");
 	}*/
