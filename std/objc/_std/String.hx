@@ -31,7 +31,7 @@
 	String, it is passed through Std.string() first.
 **/
 /*@:framework("Foundation")*/
-@:category("NSMutableString") @:coreApi class String {
+@:category("NSString") @:coreApi class String {
 
 	/**
 		The number of characters in [this] String.
@@ -50,7 +50,7 @@
 	**/
 	public function toUpperCase() : String {
 		//return untyped this.uppercaseString().mutableString();
-		return untyped this.uppercaseString().mutableCopy();
+		return untyped this.uppercaseString();
 	}
 
 	/**
@@ -59,7 +59,7 @@
 		Affects the characters [A-Z]. Other characters remain unchanged.
 	**/
 	public function toLowerCase() : String {
-		return untyped this.lowercaseString().mutableCopy();
+		return untyped this.lowercaseString();
 	}
 
 	/**
@@ -182,7 +182,7 @@
 
 		if( pos < 0 || len <= 0 ) return "";
 		
-		return untyped __objc__("[[self substringFromIndex:pos] mutableCopy]");
+		return untyped __objc__("[self substringFromIndex:pos]");
 		//return untyped __objc__("[self substringWithRange:NSMakeRange(pos,len)]");
 	}
 
@@ -223,7 +223,7 @@
 		Returns the String itself.
 	**/
 	public function toString() : String {
-		return untyped this.description().mutableCopy();
+		return untyped this.description();
 	}
 
 	/**

@@ -534,7 +534,7 @@ let remapHaxeTypeToObjc ctx is_static path pos =
 		| "Float" -> "float"
 		| "Dynamic" -> "id"
 		| "Bool" -> "BOOL"
-		| "String" -> "NSMutableString"
+		| "String" -> "NSString"
 		| "Date" -> "NSDate"
 		| "Array" -> "NSMutableArray"
 		| "Void" -> "void"
@@ -749,20 +749,20 @@ let generateResources common_ctx =
 
 let generateConstant ctx p = function
 	| TInt i ->
-		if ctx.generating_string_append > 0 then
+		(* if ctx.generating_string_append > 0 then
 			ctx.writer#write (Printf.sprintf "@\"%ld\"" i)
-		else if ctx.require_pointer then
+		else *) if ctx.require_pointer then
 			ctx.writer#write (Printf.sprintf "@%ld" i) (* %ld = int32 = (Int32.to_string i) *)
 		else
 			ctx.writer#write (Printf.sprintf "%ld" i)
 	| TFloat f ->
-		if ctx.generating_string_append > 0 then
+		(* if ctx.generating_string_append > 0 then
 			ctx.writer#write (Printf.sprintf "@\"%s\"" f)
-		else if ctx.require_pointer then
+		else *) if ctx.require_pointer then
 			ctx.writer#write (Printf.sprintf "@%s" f)
 		else
 			ctx.writer#write f
-	| TString s -> ctx.writer#write (Printf.sprintf "[@\"%s\" mutableCopy]" (Ast.s_escape s))
+	| TString s -> ctx.writer#write (Printf.sprintf "@\"%s\"" (Ast.s_escape s))
 	| TBool b -> ctx.writer#write (if b then "YES" else "NO")
 	| TNull -> ctx.writer#write (if ctx.require_pointer then "[NSNull null]" else "nil")
 	| TThis -> ctx.writer#write "self"; ctx.generating_self_access <- true
@@ -1038,7 +1038,25 @@ and generateValueOp ctx e =
 	| _ ->
 		generateValue ctx e
 
-and generateValueOpAsString ctx e = generateValueOp ctx e
+and generateValueOpAsString ctx e =
+	debug ctx "\"-generateValueOpAsString-\"";
+	match e.eexpr with
+	| TConst c ->
+		ctx.writer#write (match c with
+			| TString s -> "@\"" ^ s ^ "\"";
+			| TInt i -> "[NSString stringWithFormat:@\"%i\", " ^ (Printf.sprintf "%ld" i) ^ "]";
+			| TFloat f -> "[NSString stringWithFormat:@\"%f\", " ^ (Printf.sprintf "%s" f) ^ "]";
+			| TBool b -> "";
+			| TNull -> "";
+			| TThis -> "";
+			| TSuper -> "";
+		)
+	| TBinop (op,_,_) when op = Ast.OpAnd || op = Ast.OpOr || op = Ast.OpXor ->
+		ctx.writer#write "(";
+		generateValue ctx e;
+		ctx.writer#write ")";
+	| _ ->
+		generateValue ctx e
 
 and redefineCStatic ctx etype s =
 	debug ctx "\"-FA-\"";
@@ -1247,12 +1265,18 @@ and generateExpression ctx e =
 		
 		if (s_op="+" or s_op="+=") && (isString ctx e1 or isString ctx e2) then begin
 			ctx.generating_string_append <- ctx.generating_string_append + 1;
-			ctx.writer#write "[";
-			generateValueOpAsString ctx e1;
-			ctx.writer#write (match s_op with
-				| "+" -> " stringByAppendingString:"
-				| "+=" -> " appendString:"
-				| _ -> "");
+			(match s_op with
+				| "+" ->
+					ctx.writer#write "[";
+					generateValueOpAsString ctx e1;
+					ctx.writer#write " stringByAppendingString:";
+				| "+=" ->
+					generateValueOpAsString ctx e1;
+					ctx.writer#write " = [NSString stringWithFormat:@\"%@%@\", ";
+					generateValueOpAsString ctx e1;
+					ctx.writer#write ", ";
+				| _ -> ()
+			);
 			generateValueOpAsString ctx e2;
 			ctx.writer#write "]";
 			ctx.generating_string_append <- ctx.generating_string_append - 1;
@@ -1656,7 +1680,7 @@ and generateExpression ctx e =
 					| TArrayDecl _ -> ()
 					| _ -> (match t with
 						| "NSMutableArray" -> ctx.writer#write "(NSMutableArray*)";
-						| "NSMutableString" -> ctx.writer#write "(NSMutableString*)";
+						| "NSString" -> ctx.writer#write "(NSString*)";
 						| _ -> ()
 					)
 				); *)

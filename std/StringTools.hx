@@ -241,7 +241,7 @@ class StringTools {
 		#elseif java
 		return untyped s.trim();
 		#elseif objc
-		return untyped s.stringByTrimmingCharactersInSet ( NSCharacterSet.whitespaceCharacterSet()).mutableCopy();
+		return untyped s.stringByTrimmingCharactersInSet ( NSCharacterSet.whitespaceCharacterSet());
 		#else
 		return ltrim(rtrim(s));
 		#end
