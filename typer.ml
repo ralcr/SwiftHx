@@ -556,7 +556,7 @@ let rec unify_call_params ctx ?(overloads=None) cf el args r p inline =
 			try
 				let e = type_expr ctx ee (WithTypeResume t) in
 				(try unify_raise ctx e.etype t e.epos with Error (Unify l,p) -> raise (WithTypeError (l,p)));
-				loop ((e,false) :: acc) l l2 skip
+				loop ((Codegen.Abstract.check_cast ctx t e p,false) :: acc) l l2 skip
 			with
 				WithTypeError (ul,p) ->
 					if opt then
@@ -962,11 +962,8 @@ let rec type_ident_raise ?(imported_enums=true) ctx i p mode =
 			| Method _ when ctx.curfield.cf_name = "_new" -> ()
 			| _ -> error "You can only modify 'this' inside an inline function" p);
 			AKExpr (get_this ctx p)
-		| _ ->
-		if mode = MGet then
-			AKExpr (get_this ctx p)
-		else
-			AKNo i)
+		| (MCall, KAbstractImpl _) | (MGet, _)-> AKExpr(get_this ctx p)
+		| _ -> AKNo i)
 	| "super" ->
 		let t = (match ctx.curclass.cl_super with
 			| None -> error "Current class does not have a superclass" p
@@ -987,7 +984,7 @@ let rec type_ident_raise ?(imported_enums=true) ctx i p mode =
 	| _ ->
 	try
 		let v = PMap.find i ctx.locals in
-		(match v.v_extra with
+		(match fst v.v_extra with
 		| Some (params,e) ->
 			let t = monomorphs params v.v_type in
 			(match e with
@@ -1435,6 +1432,7 @@ let rec type_binop ctx op e1 e2 is_assign_op p =
 		let e1 = type_access ctx (fst e1) (snd e1) MSet in
 		let tt = (match e1 with AKNo _ | AKInline _ | AKUsing _ | AKMacro _ | AKAccess _ -> Value | AKSet(_,t,_) -> WithType t | AKExpr e -> WithType e.etype) in
 		let e2 = type_expr ctx e2 tt in
+		let e2 = match tt with WithType t -> Codegen.Abstract.check_cast ctx t e2 p | _ -> e2 in
 		(match e1 with
 		| AKNo s -> error ("Cannot access field or identifier " ^ s ^ " for writing") p
 		| AKExpr e1  ->
@@ -1881,102 +1879,6 @@ and type_unop ctx op flag e p =
 
 and type_switch_old ctx e cases def with_type p =
 	let eval = type_expr ctx e Value in
-	let old_m = ctx.m in
-	let enum = ref None in
-	let used_cases = Hashtbl.create 0 in
-	let is_fake_enum e =
-		e.e_path = ([],"Bool") || Meta.has Meta.FakeEnum e.e_meta
-	in
-	(match follow eval.etype with
-	| TEnum (e,_) when is_fake_enum e -> ()
-	| TEnum (e,params) ->
-		enum := Some (Some (e,params));
-		(* hack to prioritize enum lookup *)
-		ctx.m <- { ctx.m with module_types = TEnumDecl e :: ctx.m.module_types }
-	| TMono _ ->
-		enum := Some None;
-	| t ->
-		if t == t_dynamic then enum := Some None
-	);
-	let case_expr c =
-		enum := None;
-		(* this inversion is needed *)
-		unify ctx eval.etype c.etype c.epos;
-		CExpr c
-	in
-	let type_match e en s pl =
-		let p = e.epos in
-		let params = (match !enum with
-			| None ->
-				assert false
-			| Some None when is_fake_enum en ->
-				raise Exit
-			| Some None ->
-				let params = List.map (fun _ -> mk_mono()) en.e_types in
-				enum := Some (Some (en,params));
-				unify ctx eval.etype (TEnum (en,params)) p;
-				params
-			| Some (Some (en2,params)) ->
-				if en != en2 then error ("This constructor is part of enum " ^ s_type_path en.e_path ^ " but is matched with enum " ^ s_type_path en2.e_path) p;
-				params
-		) in
-		if Hashtbl.mem used_cases s then error "This constructor has already been used" p;
-		Hashtbl.add used_cases s ();
-		let cst = (try PMap.find s en.e_constrs with Not_found -> assert false) in
-		let et = apply_params en.e_types params (monomorphs cst.ef_params cst.ef_type) in
-		let pl, rt = (match et with
-		| TFun (l,rt) ->
-			let pl = (if List.length l = List.length pl then pl else
-				match pl with
-				| [None] -> List.map (fun _ -> None) l
-				| _ -> error ("This constructor requires " ^ string_of_int (List.length l) ^ " arguments") p
-			) in
-			Some (List.map2 (fun p (_,_,t) -> match p with None -> None | Some p -> Some (p, t)) pl l), rt
-		| TEnum _ ->
-			if pl <> [] then error "This constructor does not require any argument" p;
-			None, et
-		| _ -> assert false
-		) in
-		unify ctx rt eval.etype p;
-		CMatch (cst,pl,p)
-	in
-	let type_case efull e pl p =
-		try
-			let e = (match !enum, e with
-			| None, _ -> raise Exit
-			| Some (Some (en,params)), (EConst (Ident i),p) ->
-				let ef = (try
-					PMap.find i en.e_constrs
-				with Not_found ->
-					display_error ctx ("This constructor is not part of the enum " ^ s_type_path en.e_path) p;
-					raise Exit
-				) in
-				mk (fast_enum_field en ef p) (apply_params en.e_types params ef.ef_type) (snd e)
-			| _ ->
-				type_expr ctx e Value
-			) in
-			let pl = List.map (fun e ->
-				match fst e with
-				| EConst (Ident "_") -> None
-				| EConst (Ident i) -> Some i
-				| _ -> raise Exit
-			) pl in
-			(match e.eexpr with
-			| TField (_,FEnum (en,c)) -> type_match e en c.ef_name pl
-			| _ -> if pl = [] then case_expr e else raise Exit)
-		with Exit ->
-			case_expr (type_expr ctx efull Value)
-	in
-	let cases = List.map (fun (el,eg,e2) ->
-		if el = [] then error "Case must match at least one expression" (punion_el el);
-		let el = List.map (fun e ->
-			match e with
-			| (ECall (c,pl),p) -> type_case e c pl p
-			| e -> type_case e e [] (snd e)
-		) el in
-		el, e2
-	) cases in
-	ctx.m <- old_m;
 	let el = ref [] in
 	let type_case_code e =
 		let e = (match e with
@@ -1986,6 +1888,23 @@ and type_switch_old ctx e cases def with_type p =
 		el := e :: !el;
 		e
 	in
+	let consts = Hashtbl.create 0 in
+	let exprs (el,_,e) =
+		let el = List.map (fun e ->
+			match type_expr ctx e (WithType eval.etype) with
+			| { eexpr = TConst c } as e ->
+				if Hashtbl.mem consts c then error "Duplicate constant in switch" e.epos;
+				Hashtbl.add consts c true;
+				e
+			| e ->
+				e
+		) el in
+		let locals = save_locals ctx in
+		let e = type_case_code e in
+		locals();
+		el, e
+	in
+	let cases = List.map exprs cases in
 	let def() = (match def with
 		| None -> None
 		| Some e ->
@@ -1994,96 +1913,17 @@ and type_switch_old ctx e cases def with_type p =
 			locals();
 			Some e
 	) in
-	match !enum with
-	| Some (Some (enum,enparams)) ->
-		let same_params p1 p2 =
-			let l1 = (match p1 with None -> [] | Some l -> l) in
-			let l2 = (match p2 with None -> [] | Some l -> l) in
-			let rec loop = function
-				| [] , [] -> true
-				| None :: l , [] | [] , None :: l -> loop (l,[])
-				| None :: l1, None :: l2 -> loop (l1,l2)
-				| Some (n1,t1) :: l1, Some (n2,t2) :: l2 ->
-					n1 = n2 && type_iseq t1 t2 && loop (l1,l2)
-				| _ -> false
-			in
-			loop (l1,l2)
-		in
-		let matchs (el,e) =
-			match el with
-			| CMatch (c,params,p1) :: l ->
-				let params = ref params in
-				let cl = List.map (fun c ->
-					match c with
-					| CMatch (c,p,p2) ->
-						if not (same_params p !params) then display_error ctx "Constructors parameters differs : should be same name, same type, and same position" p2;
-						if p <> None then params := p;
-						c
-					| _ -> assert false
-				) l in
-				let locals = save_locals ctx in
-				let params = (match !params with
-					| None -> None
-					| Some l ->
-						let has = ref false in
-						let l = List.map (fun v ->
-							match v with
-							| None -> None
-							| Some (v,t) -> has := true; Some (add_local ctx v t)
-						) l in
-						if !has then Some l else None
-				) in
-				let e = type_case_code e in
-				locals();
-				(c :: cl) , params, e
-			| _ ->
-				assert false
-		in
-		let indexes (el,vars,e) =
-			List.map (fun c -> c.ef_index) el, vars, e
-		in
-		let cases = List.map matchs cases in
-		let def = def() in
-		(match def with
-		| Some _ -> ()
-		| None ->
-			let tenum = TEnum(enum,enparams) in
-			let l = PMap.fold (fun c acc ->
-				let t = monomorphs enum.e_types (monomorphs c.ef_params (match c.ef_type with TFun (_,t) -> t | t -> t)) in
-				if Hashtbl.mem used_cases c.ef_name || not (try unify_raise ctx t tenum c.ef_pos; true with Error (Unify _,_) -> false) then acc else c.ef_name :: acc
-			) enum.e_constrs [] in
-			match l with
-			| [] -> ()
-			| _ -> display_error ctx ("Some constructors are not matched : " ^ String.concat "," l) p
-		);
-		let t = if with_type = NoValue then (mk_mono()) else unify_min ctx (List.rev !el) in
-		mk (TMatch (eval,(enum,enparams),List.map indexes cases,def)) t p
-	| _ ->
-		let consts = Hashtbl.create 0 in
-		let exprs (el,e) =
-			let el = List.map (fun c ->
-				match c with
-				| CExpr (({ eexpr = TConst c }) as e) ->
-					if Hashtbl.mem consts c then error "Duplicate constant in switch" e.epos;
-					Hashtbl.add consts c true;
-					e
-				| CExpr c -> c
-				| CMatch (_,_,p) -> error "You cannot use a normal switch on an enum constructor" p
-			) el in
-			let locals = save_locals ctx in
-			let e = type_case_code e in
-			locals();
-			el, e
-		in
-		let cases = List.map exprs cases in
-		let def = def() in
-		let t = if with_type = NoValue then (mk_mono()) else unify_min ctx (List.rev !el) in
-		mk (TSwitch (eval,cases,def)) t p
+	let def = def() in
+	let t = if with_type = NoValue then (mk_mono()) else unify_min ctx (List.rev !el) in
+	mk (TSwitch (eval,cases,def)) t p
 
-and type_switch ctx e cases def (with_type:with_type) p =
+and type_switch ctx e cases def with_type p =
 	try
-		if (Common.defined ctx.com Common.Define.NoPatternMatching) then raise Exit;
-		match_expr ctx e cases def with_type p
+		let dt = match_expr ctx e cases def with_type p in
+		if not ctx.in_macro && not (Common.defined ctx.com Define.Interp) && ctx.com.config.pf_pattern_matching then
+			mk (TPatMatch dt) dt.dt_type p
+		else
+			Codegen.PatternMatchConversion.to_typed_ast ctx dt p
 	with Exit ->
 		type_switch_old ctx e cases def with_type p
 
@@ -2123,6 +1963,26 @@ and type_access ctx e p mode =
 	match e with
 	| EConst (Ident s) ->
 		type_ident ctx s p mode
+	| EField (e1,"new") ->
+		let e1 = type_expr ctx e1 Value in
+		begin match e1.eexpr with
+			| TTypeExpr (TClassDecl c) ->
+				if mode = MSet then error "Cannot set constructor" p;
+				if mode = MCall then error ("Cannot call constructor like this, use 'new " ^ (s_type_path c.cl_path) ^ "()' instead") p;
+				let monos = List.map (fun _ -> mk_mono()) c.cl_types in
+				let ct, _ = get_constructor ctx c monos p in
+				let args = match follow ct with TFun(args,ret) -> args | _ -> assert false in
+				let vl = List.map (fun (n,_,t) -> alloc_var n t) args in
+				let vexpr v = mk (TLocal v) v.v_type p in
+				let t = TInst(c,monos) in
+				let ec = mk (TNew(c,monos,List.map vexpr vl)) t p in
+				AKExpr(mk (TFunction {
+					tf_args = List.map (fun v -> v,None) vl;
+					tf_type = t;
+					tf_expr = mk (TReturn (Some ec)) t p;
+				}) (tfun (List.map (fun v -> v.v_type) vl) t) p)
+			| _ -> error "Binding new is only allowed on class types" p
+		end;
 	| EField _ ->
 		let fields path e =
 			List.fold_left (fun e (f,_,p) ->
@@ -2232,6 +2092,7 @@ and type_access ctx e p mode =
 	| EArray (e1,e2) ->
 		let e1 = type_expr ctx e1 Value in
 		let e2 = type_expr ctx e2 Value in
+		let has_abstract_array_access = ref false in
 		(try (match follow e1.etype with
 		| TAbstract ({a_impl = Some c} as a,pl) when a.a_array <> [] ->
 			(match mode with
@@ -2239,6 +2100,7 @@ and type_access ctx e p mode =
 				(* resolve later *)
 				AKAccess (e1, e2)
 			| _ ->
+				has_abstract_array_access := true;
 				let cf,tf,r = find_array_access a pl c e2.etype t_dynamic false in
 				let et = type_module_type ctx (TClassDecl c) None p in
 				let ef = mk (TField(et,(FStatic(c,cf)))) tf p in
@@ -2260,7 +2122,10 @@ and type_access ctx e p mode =
 				let pt = mk_mono() in
 				let t = ctx.t.tarray pt in
 				(try unify_raise ctx et t p
-				with Error(Unify _,_) -> if not ctx.untyped then error ("Array access is not allowed on " ^ (s_type (print_context()) e1.etype)) e1.epos);
+				with Error(Unify _,_) -> if not ctx.untyped then begin
+					if !has_abstract_array_access then error ("No @:arrayAccess function accepts an argument of " ^ (s_type (print_context()) e2.etype)) e1.epos
+					else error ("Array access is not allowed on " ^ (s_type (print_context()) e1.etype)) e1.epos
+				end);
 				pt
 		in
 		let pt = loop e1.etype in
@@ -2278,7 +2143,7 @@ and type_vars ctx vl p in_block =
 				| Some e ->
 					let e = type_expr ctx e (WithType t) in
 					unify ctx e.etype t p;
-					Some e
+					Some (Codegen.Abstract.check_cast ctx t e p)
 			) in
 			if v.[0] = '$' && not ctx.com.display then error "Variables names starting with a dollar are not allowed" p;
 			add_local ctx v t, e
@@ -2294,6 +2159,93 @@ and with_type_error ctx with_type msg p =
 	match with_type with
 	| WithTypeResume _ -> raise (WithTypeError ([Unify_custom msg],p))
 	| _ -> display_error ctx msg p
+
+and format_string ctx s p =
+	let e = ref None in
+	let pmin = ref p.pmin in
+	let min = ref (p.pmin + 1) in
+	let add enext len =
+		let p = { p with pmin = !min; pmax = !min + len } in
+		min := !min + len;
+		match !e with
+		| None -> e := Some (enext,p)
+		| Some prev ->
+			e := Some (EBinop (OpAdd,prev,(enext,p)),punion (pos prev) p)
+	in
+	let add_sub start pos =
+		let len = pos - start in
+		if len > 0 || !e = None then add (EConst (String (String.sub s start len))) len
+	in
+	let warn_escape = Common.defined ctx.com Define.FormatWarning in
+	let warn pos len =
+		ctx.com.warning "This string is formated" { p with pmin = !pmin + 1 + pos; pmax = !pmin + 1 + pos + len }
+	in
+	let len = String.length s in
+	let rec parse start pos =
+		if pos = len then add_sub start pos else
+		let c = String.unsafe_get s pos in
+		let pos = pos + 1 in
+		if c = '\'' then begin
+			incr pmin;
+			incr min;
+		end;
+		if c <> '$' || pos = len then parse start pos else
+		match String.unsafe_get s pos with
+		| '$' ->
+			if warn_escape then warn pos 1;
+			(* double $ *)
+			add_sub start pos;
+			parse (pos + 1) (pos + 1)
+		| '{' ->
+			parse_group start pos '{' '}' "brace"
+		| 'a'..'z' | 'A'..'Z' | '_' ->
+			add_sub start (pos - 1);
+			incr min;
+			let rec loop i =
+				if i = len then i else
+				let c = String.unsafe_get s i in
+				match c with
+				| 'a'..'z' | 'A'..'Z' | '0'..'9' | '_' -> loop (i+1)
+				| _ -> i
+			in
+			let iend = loop (pos + 1) in
+			let len = iend - pos in
+			if warn_escape then warn pos len;
+			add (EConst (Ident (String.sub s pos len))) len;
+			parse (pos + len) (pos + len)
+		| _ ->
+			(* keep as-it *)
+			parse start pos
+	and parse_group start pos gopen gclose gname =
+		add_sub start (pos - 1);
+		let rec loop groups i =
+			if i = len then
+				match groups with
+				| [] -> assert false
+				| g :: _ -> error ("Unclosed " ^ gname) { p with pmin = !pmin + g + 1; pmax = !pmin + g + 2 }
+			else
+				let c = String.unsafe_get s i in
+				if c = gopen then
+					loop (i :: groups) (i + 1)
+				else if c = gclose then begin
+					let groups = List.tl groups in
+					if groups = [] then i else loop groups (i + 1)
+				end else
+					loop groups (i + 1)
+		in
+		let send = loop [pos] (pos + 1) in
+		let slen = send - pos - 1 in
+		let scode = String.sub s (pos + 1) slen in
+		if warn_escape then warn (pos + 1) slen;
+		min := !min + 2;
+		add (fst (parse_expr_string ctx scode { p with pmin = !pmin + pos + 2; pmax = !pmin + send + 1 } true)) slen;
+		min := !min + 1;
+		parse (send + 1) (send + 1)
+	in
+	parse 0 0;
+	match !e with
+	| None -> assert false
+	| Some e -> e
 
 and type_expr ctx (e,p) (with_type:with_type) =
 	match e with
@@ -2331,91 +2283,7 @@ and type_expr ctx (e,p) (with_type:with_type) =
 		let t = Typeload.load_core_type ctx "EReg" in
 		mk (TNew ((match t with TInst (c,[]) -> c | _ -> assert false),[],[str;opt])) t p
 	| EConst (String s) when Lexer.is_fmt_string p ->
-		let e = ref None in
-		let pmin = ref p.pmin in
-		let min = ref (p.pmin + 1) in
-		let add enext len =
-			let p = { p with pmin = !min; pmax = !min + len } in
-			min := !min + len;
-			match !e with
-			| None -> e := Some (enext,p)
-			| Some prev ->
-				e := Some (EBinop (OpAdd,prev,(enext,p)),punion (pos prev) p)
-		in
-		let add_sub start pos =
-			let len = pos - start in
-			if len > 0 || !e = None then add (EConst (String (String.sub s start len))) len
-		in
-		let warn_escape = Common.defined ctx.com Define.FormatWarning in
-		let warn pos len =
-			ctx.com.warning "This string is formated" { p with pmin = !pmin + 1 + pos; pmax = !pmin + 1 + pos + len }
-		in
-		let len = String.length s in
-		let rec parse start pos =
-			if pos = len then add_sub start pos else
-			let c = String.unsafe_get s pos in
-			let pos = pos + 1 in
-			if c = '\'' then begin
-				incr pmin;
-				incr min;
-			end;
-			if c <> '$' || pos = len then parse start pos else
-			match String.unsafe_get s pos with
-			| '$' ->
-				if warn_escape then warn pos 1;
-				(* double $ *)
-				add_sub start pos;
-				parse (pos + 1) (pos + 1)
-			| '{' ->
-				parse_group start pos '{' '}' "brace"
-			| 'a'..'z' | 'A'..'Z' | '_' ->
-				add_sub start (pos - 1);
-				incr min;
-				let rec loop i =
-					if i = len then i else
-					let c = String.unsafe_get s i in
-					match c with
-					| 'a'..'z' | 'A'..'Z' | '0'..'9' | '_' -> loop (i+1)
-					| _ -> i
-				in
-				let iend = loop (pos + 1) in
-				let len = iend - pos in
-				if warn_escape then warn pos len;
-				add (EConst (Ident (String.sub s pos len))) len;
-				parse (pos + len) (pos + len)
-			| _ ->
-				(* keep as-it *)
-				parse start pos
-		and parse_group start pos gopen gclose gname =
-			add_sub start (pos - 1);
-			let rec loop groups i =
-				if i = len then
-					match groups with
-					| [] -> assert false
-					| g :: _ -> error ("Unclosed " ^ gname) { p with pmin = !pmin + g + 1; pmax = !pmin + g + 2 }
-				else
-					let c = String.unsafe_get s i in
-					if c = gopen then
-						loop (i :: groups) (i + 1)
-					else if c = gclose then begin
-						let groups = List.tl groups in
-						if groups = [] then i else loop groups (i + 1)
-					end else
-						loop groups (i + 1)
-			in
-			let send = loop [pos] (pos + 1) in
-			let slen = send - pos - 1 in
-			let scode = String.sub s (pos + 1) slen in
-			if warn_escape then warn (pos + 1) slen;
-			min := !min + 2;
-			add (fst (parse_expr_string ctx scode { p with pmin = !pmin + pos + 2; pmax = !pmin + send + 1 } true)) slen;
-			min := !min + 1;
-			parse (send + 1) (send + 1)
-		in
-		parse 0 0;
-		(match !e with
-		| None -> assert false
-		| Some e -> type_expr ctx e with_type);
+		type_expr ctx (format_string ctx s p) with_type
 	| EConst c ->
 		Codegen.type_constant ctx.com c p
     | EBinop (op,e1,e2) ->
@@ -2482,7 +2350,7 @@ and type_expr ctx (e,p) (with_type:with_type) =
 				if PMap.mem n !fields then error ("Duplicate field in object declaration : " ^ n) p;
 				let e = try
 					let t = (PMap.find n a.a_fields).cf_type in
-					let e = type_expr ctx e (match with_type with WithTypeResume _ -> WithTypeResume t | _ -> WithType t) in
+					let e = Codegen.Abstract.check_cast ctx t (type_expr ctx e (match with_type with WithTypeResume _ -> WithTypeResume t | _ -> WithType t)) p in
 					unify ctx e.etype t e.epos;
 					(try type_eq EqStrict e.etype t; e with Unify_error _ -> mk (TCast (e,None)) t e.epos)
 				with Not_found ->
@@ -2619,7 +2487,7 @@ and type_expr ctx (e,p) (with_type:with_type) =
 				(match with_type with
 				| WithTypeResume _ -> (try unify_raise ctx e.etype t e.epos with Error (Unify l,p) -> raise (WithTypeError (l,p)))
 				| _ -> unify ctx e.etype t e.epos);
-				e
+				Codegen.Abstract.check_cast ctx t e p
 			) el in
 			mk (TArrayDecl el) (ctx.t.tarray t) p)
 	| EVars vl ->
@@ -2912,7 +2780,7 @@ and type_expr ctx (e,p) (with_type:with_type) =
 		(match v with
 		| None -> e
 		| Some v ->
-			if params <> [] || inline then v.v_extra <- Some (params,if inline then Some e else None);
+			if params <> [] || inline then v.v_extra <- Some (params,if inline then Some e else None),snd v.v_extra;
 			let rec loop = function
 				| Codegen.Block f | Codegen.Loop f | Codegen.Function f -> f loop
 				| Codegen.Use v2 when v == v2 -> raise Exit
@@ -3059,7 +2927,8 @@ and type_expr ctx (e,p) (with_type:with_type) =
 			| TAnon a ->
 				(match !(a.a_status) with
 				| Statics c ->
-					PMap.fold (fun f acc -> if can_access ctx c f true then PMap.add f.cf_name { f with cf_public = true; cf_type = opt_type f.cf_type } acc else acc) a.a_fields PMap.empty
+					let pm = match c.cl_constructor with None -> PMap.empty | Some cf -> PMap.add "new" cf PMap.empty in
+					PMap.fold (fun f acc -> if can_access ctx c f true then PMap.add f.cf_name { f with cf_public = true; cf_type = opt_type f.cf_type } acc else acc) a.a_fields pm
 				| _ ->
 					a.a_fields)
 			| TFun (args,ret) ->
@@ -3090,7 +2959,7 @@ and type_expr ctx (e,p) (with_type:with_type) =
 							unify_raise ctx (dup e.etype) t e.epos;
 							List.iter2 (fun m (name,t) -> match follow t with
 								| TInst ({ cl_kind = KTypeParameter constr },_) when constr <> [] ->
-									List.iter (fun tc -> unify_raise ctx (dup e.etype) (map tc) e.epos) constr
+									List.iter (fun tc -> unify_raise ctx m (map tc) e.epos) constr
 								| _ -> ()
 							) monos f.cf_params;
 							if not (can_access ctx c f true) || follow e.etype == t_dynamic && follow t != t_dynamic then
@@ -3435,9 +3304,9 @@ let generate ctx =
 				end
 			in
 			loop c
-		| TMatch (_,(enum,_),_,_) ->
+(* 		| TMatch (_,(enum,_),_,_) ->
 			loop_enum p enum;
-			iter (walk_expr p) e
+			iter (walk_expr p) e *)
 		| TCall (f,_) ->
 			iter (walk_expr p) e;
 			(* static call for initializing a variable *)
@@ -3568,6 +3437,8 @@ let make_macro_api ctx p =
 		Interp.on_generate = (fun f ->
 			Common.add_filter ctx.com (fun() ->
 				let t = macro_timer ctx "onGenerate" in
+				(* add standard types to current module so basic types can be resolved (issue #1904) *)
+				ctx.m.module_types <- ctx.m.module_types @ ctx.g.std.m_types;
 				f (List.map make_instance ctx.com.types);
 				t()
 			)
@@ -3761,6 +3632,9 @@ let make_macro_api ctx p =
 		);
 		Interp.use_cache = (fun() ->
 			!macro_enable_cache
+		);
+		Interp.format_string = (fun s p ->
+			format_string ctx s p
 		);
 	}
 
@@ -4163,3 +4037,4 @@ unify_min_ref := unify_min;
 make_call_ref := make_call;
 get_constructor_ref := get_constructor;
 check_abstract_cast_ref := Codegen.Abstract.check_cast;
+type_module_type_ref := type_module_type;

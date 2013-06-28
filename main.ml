@@ -1159,7 +1159,7 @@ try
 		let real = Extc.get_real_path (!Parser.resume_display).Ast.pfile in
 		classes := lookup_classes com real;
 		if !classes = [] then begin
-			if not (Sys.file_exists real) then failwith "Display file does not exists";
+			if not (Sys.file_exists real) then failwith "Display file does not exist";
 			(match List.rev (ExtString.String.nsplit real "\\") with
 			| file :: _ when file.[0] >= 'a' && file.[1] <= 'z' -> failwith ("Display file '" ^ file ^ "' should not start with a lowercase letter")
 			| _ -> ());
@@ -1227,7 +1227,7 @@ try
 				| [] -> ()
 				| (v,def) :: l ->
 					if v >= com.objc_version then begin
-						print_endline ("ios" ^ def);
+						print_endline ("-> define flag: ios" ^ def);
 						Common.raw_define com ("ios" ^ def);
 					end;
 					loop l
@@ -1270,6 +1270,7 @@ try
 		com.modules <- modules;
 		let filters = [
 			Codegen.Abstract.handle_abstract_casts tctx;
+			Codegen.promote_complex_rhs com;
 			if com.foptimize then (fun e -> Optimizer.reduce_expression tctx (Optimizer.inline_constructors tctx e)) else Optimizer.sanitize tctx;
 			Codegen.check_local_vars_init;
 			Codegen.captured_vars com;
@@ -1279,22 +1280,28 @@ try
 		Codegen.post_process_end();
 		List.iter (fun f -> f()) (List.rev com.filters);
 		List.iter (Codegen.save_class_state tctx) com.types;
+		List.iter (fun t ->
+			Codegen.remove_generic_base tctx t;
+			Codegen.remove_extern_fields tctx t
+		) com.types;
 		if Common.defined_value_safe com Define.DisplayMode = "usage" then
 			Codegen.detect_usage com;
 		let dce_mode = (try Common.defined_value com Define.Dce with _ -> "no") in
 		if not (!gen_as3 || dce_mode = "no" || Common.defined com Define.DocGen) then Dce.run com main (dce_mode = "full" && not !interp);
+		(* always filter empty abstract implementation classes (issue #1885) *)
+		List.iter (fun mt -> match mt with
+			| TClassDecl({cl_kind = KAbstractImpl _} as c) when c.cl_ordered_statics = [] && c.cl_ordered_fields = [] -> c.cl_extern <- true
+			| _ -> ()
+		) com.types;
 		let type_filters = [
 			Codegen.check_private_path;
-			Codegen.remove_generic_base;
 			Codegen.apply_native_paths;
 			Codegen.add_rtti;
-			Codegen.remove_extern_fields;
 			(match ctx.com.platform with | Java | Cs -> (fun _ _ -> ()) | _ -> Codegen.add_field_inits);
 			Codegen.add_meta_field;
 			Codegen.check_remove_metadata;
 			Codegen.check_void_field;
 		] in
-		let type_filters = if ctx.com.platform = Java then Codegen.promote_abstract_parameters :: type_filters else type_filters in
 		List.iter (fun t -> List.iter (fun f -> f tctx t) type_filters) com.types;
 		if ctx.has_error then raise Abort;
 		(match !xml_out with
@@ -1304,6 +1311,7 @@ try
 		| Some file ->
 			Common.log com ("Generating xml : " ^ file);
 			Genxml.generate com file);
+		if com.platform = Java then List.iter (Codegen.promote_abstract_parameters com) com.types;
 		if com.platform = Flash || com.platform = Cpp then List.iter (Codegen.fix_overrides com) com.types;
 		if Common.defined com Define.Dump then Codegen.dump_types com;
 		if Common.defined com Define.DumpDependencies then Codegen.dump_dependencies com;

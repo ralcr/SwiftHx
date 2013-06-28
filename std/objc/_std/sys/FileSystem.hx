@@ -37,18 +37,18 @@ private enum FileKind {
 
 @:coreApi
 class FileSystem {
-
+	
 	public static function exists( path : String ) : Bool {
 		return NSFileManager.defaultManager().fileExistsAtPath(path);
 	}
-
-	public static function rename( path : String, newpath : String ) : Void {
+	
+	public static function rename( path : String, newPath : String ) : Void {
 		var error :NSError = null;
-		var success = NSFileManager.defaultManager().moveItemAtPath (path, newpath, error);
+		var success = NSFileManager.defaultManager().moveItemAtPath (path, newPath, error);
 		if (!success)
-			throw "Could not rename:" + path + " to " + newpath;
+			throw "Could not rename:" + path + " to " + newPath;
 	}
-
+	
 	public static function stat( path : String ) : FileStat {
 		var s : FileStat = null;
 		if (s==null)
@@ -58,11 +58,11 @@ class FileSystem {
 		s.ctime = Date.fromTime(1000.0*(untyped s.ctime));
 		return s;
 	}
-
-	public static function fullPath( relpath : String ) : String {
-		return new String(file_full_path(relpath));
+	
+	public static function fullPath( relPath : String ) : String {
+		return null;
 	}
-
+	
 	static function kind( path : String ) : FileKind {
 		var isDir :Bool = false;
 		NSFileManager.defaultManager().fileExistsAtPath (path, isDir);
@@ -72,41 +72,41 @@ class FileSystem {
 			//default: kother(k);
 		}
 	}
-
+	
 	public static function isDirectory( path : String ) : Bool {
 		var isDir :Bool = false;
 		NSFileManager.defaultManager().fileExistsAtPath (path, isDir);
 		return isDir;
 	}
-
+	
 	public static function createDirectory( path : String ) : Void {
 		var error :NSError = null;
-		var attributes = { NSFilePosixPermissions : 493 };
+		var attributes :Dynamic = { NSFilePosixPermissions : 493 };
 		var success = NSFileManager.defaultManager().createDirectoryAtPath (path, true, attributes, error);
 		if (!success)
 			throw "Could not create directory:" + path;
 	}
-
+	
 	public static function deleteFile( path : String ) : Void {
 		var error :NSError = null;
 		var success = NSFileManager.defaultManager().removeItemAtPath (path, error);
 		if (!success)
 			throw "Could not delete file:" + path;
 	}
-
+	
 	public static function deleteDirectory( path : String ) : Void {
 		var error :NSError = null;
 		var success = NSFileManager.defaultManager().removeItemAtPath (path, error);
 		if (!success)
 			throw "Could not delete directory:" + path;
 	}
-
+	
 	public static function readDirectory( path : String ) : Array<String> {
 		//var dir = NSHomeDirectory();
 		var de :NSDirectoryEnumerator = NSFileManager.defaultManager().enumeratorAtPath ( path );
 		var files :Array<String> = [];
 		var file :String = null;
-		while (file = de.nextObject()) files.push ( file );
+		while ((file = de.nextObject()) != null) files.push ( file );
 		return files;
 	}
 }

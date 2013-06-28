@@ -94,6 +94,8 @@ type platform_config = {
 	pf_add_final_return : bool;
 	(** does the platform natively support overloaded functions *)
 	pf_overload : bool;
+	(** does the platform generator handle pattern matching *)
+	pf_pattern_matching : bool;
 }
 
 type context = {
@@ -217,7 +219,7 @@ module Define = struct
 		| Last (* must be last *)
 
 	let infos = function
-		| AbsolutePath -> ("absolute_path","Print absoluate file path in trace output")
+		| AbsolutePath -> ("absolute_path","Print absolute file path in trace output")
 		| AdvancedTelemetry -> ("advanced-telemetry","Allow the SWF to be measured with Monocle tool")
 		| As3 -> ("as3","Defined when outputing flash9 as3 source code")
 		| CheckXmlProxy -> ("check_xml_proxy","Check the used fields of the xml proxy")
@@ -323,6 +325,7 @@ module MetaInfo = struct
 		| DynamicObject -> ":dynamicObject",("Used internally to identify the Dynamic Object implementation",[Platforms [Java;Cs]; UsedOn TClass; Internal])
 		| Enum -> ":enum",("Used internally to annotate a class that was generated from an enum",[Platforms [Java;Cs]; UsedOn TClass; Internal])
 		| EnumConstructorParam -> ":enumConstructorParam",("Used internally to annotate GADT type parameters",[UsedOn TClass; Internal])
+		| Exhaustive -> ":exhaustive",("",[Internal])
 		| Expose -> ":expose",("Makes the class available on the window object",[HasParam "?Name=Class path";UsedOn TClass;Platform Js])
 		| Extern -> ":extern",("Marks the field as extern so it is not generated",[UsedOn TClassField])
 		| FakeEnum -> ":fakeEnum",("Treat enum as collection of values of the specified type",[HasParam "Type name";UsedOn TEnum])
@@ -451,6 +454,7 @@ let default_config =
 		pf_pad_nulls = false;
 		pf_add_final_return = false;
 		pf_overload = false;
+		pf_pattern_matching = false;
 	}
 
 let get_config com =
@@ -470,6 +474,7 @@ let get_config com =
 			pf_pad_nulls = false;
 			pf_add_final_return = false;
 			pf_overload = false;
+			pf_pattern_matching = false;
 		}
 	| Js ->
 		{
@@ -483,6 +488,7 @@ let get_config com =
 			pf_pad_nulls = false;
 			pf_add_final_return = false;
 			pf_overload = false;
+			pf_pattern_matching = false;
 		}
 	| Neko ->
 		{
@@ -496,6 +502,7 @@ let get_config com =
 			pf_pad_nulls = true;
 			pf_add_final_return = false;
 			pf_overload = false;
+			pf_pattern_matching = false;
 		}
 	| Flash when defined Define.As3 ->
 		{
@@ -509,6 +516,7 @@ let get_config com =
 			pf_pad_nulls = false;
 			pf_add_final_return = true;
 			pf_overload = false;
+			pf_pattern_matching = false;
 		}
 	| Flash ->
 		{
@@ -522,6 +530,7 @@ let get_config com =
 			pf_pad_nulls = false;
 			pf_add_final_return = false;
 			pf_overload = false;
+			pf_pattern_matching = false;
 		}
 	| Php ->
 		{
@@ -540,6 +549,7 @@ let get_config com =
 			pf_pad_nulls = true;
 			pf_add_final_return = false;
 			pf_overload = false;
+			pf_pattern_matching = false;
 		}
 	| Cpp ->
 		{
@@ -553,6 +563,7 @@ let get_config com =
 			pf_pad_nulls = true;
 			pf_add_final_return = true;
 			pf_overload = false;
+			pf_pattern_matching = false;
 		}
 	| Cs ->
 		{
@@ -566,6 +577,7 @@ let get_config com =
 			pf_pad_nulls = true;
 			pf_add_final_return = false;
 			pf_overload = true;
+			pf_pattern_matching = false;
 		}
 	| Java ->
 		{
@@ -579,6 +591,7 @@ let get_config com =
 			pf_pad_nulls = true;
 			pf_add_final_return = false;
 			pf_overload = true;
+			pf_pattern_matching = false;
 		}
 	| ObjC ->
 		{
@@ -592,6 +605,7 @@ let get_config com =
 			pf_pad_nulls = false;
 			pf_add_final_return = true;
 			pf_overload = true;
+			pf_pattern_matching = false;
 		}
 
 let create v args =

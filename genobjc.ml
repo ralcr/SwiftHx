@@ -677,7 +677,7 @@ let rec typeToString ctx t p =
 let rec iterSwitchBreak in_switch e =
 	match e.eexpr with
 	| TFunction _ | TWhile _ | TFor _ -> ()
-	| TSwitch _ | TMatch _ when not in_switch -> iterSwitchBreak true e
+	| TSwitch _ | TPatMatch _ when not in_switch -> iterSwitchBreak true e
 	| TBreak when in_switch -> raise Exit
 	| _ -> iter (iterSwitchBreak in_switch) e
 ;;
@@ -1436,6 +1436,7 @@ and generateExpression ctx e =
 		);
 		ctx.generating_fields <- ctx.generating_fields - 1;
 		
+	| TEnumParameter (expr,_,i) -> ctx.writer#write "TODO: TEnumParameter";
 	| TTypeExpr t ->
 		(* ctx.writer#write (Printf.sprintf "%d" ctx.generating_calls); *)
 		let p = t_path t in
@@ -1808,7 +1809,7 @@ and generateExpression ctx e =
 			generateExpression ctx e;
 		) catchs;
 		(* (typeToString ctx v.v_type e.epos) *)
-	| TMatch (e,_,cases,def) ->
+(*	| TMatch (e,_,cases,def) ->
 		(* ctx.writer#begin_block; *)
 		ctx.writer#new_line;
 		let tmp = genLocal ctx "e" in
@@ -1849,7 +1850,8 @@ and generateExpression ctx e =
 		);
 		ctx.writer#new_line;
 		ctx.writer#end_block;
-		(* ctx.writer#end_block; *)
+		(* ctx.writer#end_block; *)*)
+	| TPatMatch dt -> assert false
 	| TSwitch (e,cases,def) ->
 		ctx.return_needs_semicolon <- true;
 		ctx.writer#write "switch"; generateValue ctx (parent e); ctx.writer#begin_block;
@@ -1941,6 +1943,7 @@ and generateValue ctx e =
 	| TArray _
 	| TBinop _
 	| TField _
+	| TEnumParameter _
 	| TParenthesis _
 	| TObjectDecl _
 	| TArrayDecl _
@@ -2006,13 +2009,14 @@ and generateValue ctx e =
 			match def with None -> None | Some e -> Some (assign e)
 		)) e.etype e.epos);
 		v()
-	| TMatch (cond,enum,cases,def) ->
+	(* | TMatch (cond,enum,cases,def) ->
 		let v = value true in
 		generateExpression ctx (mk (TMatch (cond,enum,
 			List.map (fun (constr,params,e) -> (constr,params,assign e)) cases,
 			match def with None -> None | Some e -> Some (assign e)
 		)) e.etype e.epos);
-		v()
+		v() *)
+	| TPatMatch dt -> assert false
 	| TTry (b,catchs) ->
 		let v = value true in
 		generateExpression ctx (mk (TTry (block (assign b),
@@ -2406,7 +2410,7 @@ let pbxproj common_ctx files_manager =
 	let supporting_files = ref "" in
 	(match common_ctx.objc_supporting_files with
 	| None ->
-		print_endline "No SupportingFiles linked by user, search in hxcocoa lib. Custom -Info.plist is ignored.";
+		print_endline "No SupportingFiles defined by user, search in hxcocoa lib.";
 		List.iter (fun dir ->
 			if Sys.file_exists dir then begin
 				let contents = Array.to_list (Sys.readdir dir) in

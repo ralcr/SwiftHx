@@ -26,17 +26,16 @@
 @:include("objc/runtime.h")
 @:coreApi class Reflect {
 
-	public  static function hasField( o : Dynamic, field : String ) : Bool untyped {
-		return o!=null && o.hx_has_field (field);
+	public  static function hasField( o : Dynamic, field : String ) : Bool {
+		return o.valueForKey ( field ) != null;
 	}
 
-	public static function field( o : Dynamic, field : String ) : Dynamic untyped {
-		return (o==null) ? null : o.hx_field(field,false);
+	public static function field( o : Dynamic, field : String ) : Dynamic {
+		return o.valueForKey ( field );
 	}
 
-	public inline static function setField( o : Dynamic, field : String, value : Dynamic ) : Void untyped {
-		if (o!=null)
-			o.hx_set_field (field,value,false);
+	public inline static function setField( o : Dynamic, field : String, value : Dynamic ) : Void {
+		o.setValue (value, field);
 	}
 
 	public static inline function getProperty( o : Dynamic, field : String ) : Dynamic {
@@ -44,8 +43,7 @@
 	}
 
 	public static inline function setProperty( o : Dynamic, field : String, value : Dynamic ) : Void {
-		if (o!=null)
-			o.hx_set_field (field,value,true);
+		o.setValue (value, field);//[object setValue: value forKey: key];
 	}
 
 	public static function callMethod( o : Dynamic, func : Dynamic, args : Array<Dynamic> ) : Dynamic untyped {
@@ -97,14 +95,7 @@
 	}
 
 	public static function copy<T>( o : T ) : T {
-		if (o==null) return null;
-		if(untyped o.hx_get_type()==__global__.vtString ) return o;
-		if(untyped o.hx_get_type()==__global__.vtArray )
-			return untyped o.hx_field("copy",true)();
-		var o2 : Dynamic = {};
-		for( f in Reflect.fields(o) )
-			Reflect.setField (o2,f,Reflect.field(o,f));
-		return o2;
+		return untyped o.copy();
 	}
 
 	public static function makeVarArgs( f : Array<Dynamic> -> Dynamic ) : Dynamic {

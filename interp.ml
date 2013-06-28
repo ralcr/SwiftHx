@@ -119,6 +119,7 @@ type extern_api = {
 	current_module : unit -> module_def;
 	delayed_macro : int -> (unit -> (unit -> value));
 	use_cache : unit -> bool;
+	format_string : string -> Ast.pos -> Ast.expr;
 }
 
 type callstack = {
@@ -1705,7 +1706,7 @@ let std_lib =
 				if i < 0 then
 					acc
 				else
-					let e, v = ExtString.String.split "=" env.(i) in
+					let e, v = ExtString.String.split env.(i) "=" in
 					loop (VArray [|VString e;VString v;acc|]) (i - 1)
 			in
 			loop VNull (Array.length env - 1)
@@ -2274,6 +2275,16 @@ let macro_lib =
 		);
 		"s_type", Fun1 (fun v ->
 			VString (Type.s_type (print_context()) (decode_type v))
+		);
+		"is_fmt_string", Fun1 (fun v ->
+			match v with
+			| VAbstract (APos p) -> VBool(Lexer.is_fmt_string p)
+			| _ -> VNull
+		);
+		"format_string", Fun2 (fun s p ->
+			match s,p with
+			| VString(s),VAbstract(APos p) -> encode_expr ((get_ctx()).curapi.format_string s p)
+			| _ -> VNull
 		);
 		"display", Fun1 (fun v ->
 			match v with
@@ -4470,6 +4481,7 @@ let rec make_ast e =
 	| TLocal v -> EConst (mk_ident v.v_name)
 	| TArray (e1,e2) -> EArray (make_ast e1,make_ast e2)
 	| TBinop (op,e1,e2) -> EBinop (op, make_ast e1, make_ast e2)
+	| TEnumParameter (e,_,i) -> assert false
 	| TField (e,f) -> EField (make_ast e, Type.field_name f)
 	| TTypeExpr t -> fst (mk_path (full_type_path t) e.epos)
 	| TParenthesis e -> EParenthesis (make_ast e)
@@ -4495,7 +4507,7 @@ let rec make_ast e =
 		) cases in
 		let def = match eopt def with None -> None | Some (EBlock [],_) -> Some None | e -> Some e in
 		ESwitch (make_ast e,cases,def)
-	| TMatch (e,(en,_),cases,def) ->
+(* 	| TMatch (e,(en,_),cases,def) ->
 		let scases (idx,args,e) =
 			let p = e.epos in
 			let unused = (EConst (Ident "_"),p) in
@@ -4517,7 +4529,8 @@ let rec make_ast e =
 			) idx, None, (match e.eexpr with TBlock [] -> None | _ -> Some (make_ast e))
 		in
 		let def = match eopt def with None -> None | Some (EBlock [],_) -> Some None | e -> Some e in
-		ESwitch (make_ast e,List.map scases cases,def)
+		ESwitch (make_ast e,List.map scases cases,def) *)
+	| TPatMatch dt -> assert false
 	| TTry (e,catches) -> ETry (make_ast e,List.map (fun (v,e) -> v.v_name, (try make_type v.v_type with Exit -> assert false), make_ast e) catches)
 	| TReturn e -> EReturn (eopt e)
 	| TBreak -> EBreak

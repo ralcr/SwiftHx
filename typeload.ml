@@ -176,6 +176,7 @@ let make_module ctx mpath file tdecls loadp =
 				(match !decls with
 				| (TClassDecl c,_) :: _ ->
 					(try c.cl_meta <- (Meta.get Meta.Build a.a_meta) :: c.cl_meta with Not_found -> ());
+					(try c.cl_meta <- (Meta.get Meta.CoreApi a.a_meta) :: c.cl_meta with Not_found -> ());
 					a.a_impl <- Some c;
 					c.cl_kind <- KAbstractImpl a
 				| _ -> assert false);
@@ -881,11 +882,21 @@ let rec return_flow ctx e =
 	| TSwitch (v,cases,Some e) ->
 		List.iter (fun (_,e) -> return_flow e) cases;
 		return_flow e
-	| TSwitch (e,cases,None) when (match follow e.etype with TEnum _ -> true | _ -> false) ->
+	| TSwitch ({eexpr = TMeta((Meta.Exhaustive,_,_),_)},cases,None) ->
 		List.iter (fun (_,e) -> return_flow e) cases;
-	| TMatch (_,_,cases,def) ->
-		List.iter (fun (_,_,e) -> return_flow e) cases;
-		(match def with None -> () | Some e -> return_flow e)
+	| TPatMatch dt ->
+		let rec loop d = match d with
+			| DTExpr e -> return_flow e
+			| DTGuard(_,dt1,dt2) ->
+				loop dt1;
+				(match dt2 with None -> () | Some dt -> loop dt)
+			| DTBind (_,d) -> loop d
+			| DTSwitch (_,cl,dto) ->
+				List.iter (fun (_,dt) -> loop dt) cl;
+				(match dto with None -> () | Some dt -> loop dt)
+			| DTGoto i -> loop (dt.dt_dt_lookup.(i))
+		in
+		loop (dt.dt_dt_lookup.(dt.dt_first))
 	| TTry (e,cases) ->
 		return_flow e;
 		List.iter (fun (_,e) -> return_flow e) cases;
@@ -1027,7 +1038,9 @@ let type_function ctx args ret fmode f do_display p =
 				| TConst c -> Some c
 				| _ -> display_error ctx "Parameter default value should be constant" p; None
 		) in
-		add_local ctx n t, c
+		let v,c = add_local ctx n t, c in
+		if n = "this" then v.v_extra <- None,true;
+		v,c
 	) args in
 	let old_ret = ctx.ret in
 	let old_fun = ctx.curfun in
@@ -1051,7 +1064,11 @@ let type_function ctx args ret fmode f do_display p =
 	let have_ret = (try loop e; false with Exit -> true) in
 	if have_ret then
 		(try return_flow ctx e with Exit -> ())
-	else (try type_eq EqStrict ret ctx.t.tvoid with Unify_error _ -> display_error ctx ("Missing return " ^ (s_type (print_context()) ret)) p);
+	else (try type_eq EqStrict ret ctx.t.tvoid with Unify_error _ ->
+		match e.eexpr with
+		(* accept final throw (issue #1923) *)
+		| TBlock el when (match List.rev el with ({eexpr = TThrow _} :: _) -> true | _ -> false) -> ()
+		| _ -> display_error ctx ("Missing return " ^ (s_type (print_context()) ret)) p);
 	let rec loop e =
 		match e.eexpr with
 		| TCall ({ eexpr = TConst TSuper },_) -> raise Exit
@@ -1100,10 +1117,14 @@ let init_core_api ctx c =
 		| Some c ->
 			c
 	) in
-	let t = load_instance ctx2 { tpackage = fst c.cl_path; tname = snd c.cl_path; tparams = []; tsub = None; } c.cl_pos true in
+	let tpath = match c.cl_kind with
+		| KAbstractImpl a -> { tpackage = fst a.a_path; tname = snd a.a_path; tparams = []; tsub = None; }
+		| _ -> { tpackage = fst c.cl_path; tname = snd c.cl_path; tparams = []; tsub = None; }
+	in
+	let t = load_instance ctx2 tpath c.cl_pos true in
 	flush_pass ctx2 PFinal "core_final";
 	match t with
-	| TInst (ccore,_) ->
+	| TInst (ccore,_) | TAbstract({a_impl = Some ccore}, _) ->
 		begin try
 			List.iter2 (fun (n1,t1) (n2,t2) -> match follow t1, follow t2 with
 				| TInst({cl_kind = KTypeParameter l1},_),TInst({cl_kind = KTypeParameter l2},_) ->
@@ -1656,6 +1677,8 @@ let init_class ctx c p context_init herits fields =
 				if ctx.com.display then () else
 				try
 					let _, t2, f = (if stat then let f = PMap.find m c.cl_statics in Some c, f.cf_type, f else class_field c m) in
+					(* accessors must be public on As3 (issue #1872) *)
+					if Common.defined ctx.com Define.As3 then f.cf_meta <- (Meta.Public,[],p) :: f.cf_meta;
 					(match f.cf_kind with
 						| Method MethMacro ->
 							display_error ctx "Macro methods cannot be used as property accessor" p;
