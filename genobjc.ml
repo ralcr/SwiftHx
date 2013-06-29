@@ -1768,18 +1768,24 @@ and generateExpression ctx e =
 		ctx.writer#write "if";
 		generateValue ctx (parent cond);
 		ctx.writer#write " ";
+		ctx.writer#begin_block;
 		generateExpression ctx e;
+		ctx.writer#terminate_line;
+		ctx.writer#end_block;
 		ctx.in_condition <- false;
 		(match eelse with
 			| None -> ()
 			| Some e2 ->
 				(match e.eexpr with
 					| TBlock _ | TSwitch _ -> ()
-					| _ -> ();ctx.writer#write ";"
+					| _ -> if ctx.return_needs_semicolon then ctx.writer#write ";";
 				);
 				ctx.writer#new_line;
 				ctx.writer#write "else ";
-				generateExpression ctx e2
+				ctx.writer#begin_block;
+				generateExpression ctx e2;
+				ctx.writer#terminate_line;
+				ctx.writer#end_block;
 		);
 	| TUnop (op,Ast.Prefix,e) ->
 		ctx.writer#write (Ast.s_unop op);
@@ -1877,14 +1883,14 @@ and generateExpression ctx e =
 		(* ctx.writer#end_block; *)*)
 	| TPatMatch dt -> assert false
 	| TSwitch (e,cases,def) ->
-		ctx.return_needs_semicolon <- true;
+		(* ctx.return_needs_semicolon <- true; *)
 		ctx.writer#write "switch"; generateValue ctx (parent e); ctx.writer#begin_block;
 		List.iter (fun (el,e2) ->
 			List.iter (fun e ->
 				ctx.writer#write "case "; generateValue ctx e; ctx.writer#write ":";
 			) el;
 			generateCaseBlock ctx e2;
-			ctx.writer#new_line;
+			ctx.writer#terminate_line;
 			ctx.writer#write "break;";
 			ctx.writer#new_line;
 		) cases;
@@ -1897,7 +1903,7 @@ and generateExpression ctx e =
 			ctx.writer#new_line;
 		);
 		(* ctx.writer#write "}" *)
-		ctx.return_needs_semicolon <- false;
+		(* ctx.return_needs_semicolon <- false; *)
 		ctx.writer#end_block
 	| TCast (e1,None) ->
 		ctx.writer#write "(";
@@ -1913,12 +1919,14 @@ and generateExpression ctx e =
 		(* generateExpression ctx (Codegen.default_cast ctx.common_ctx e1 t e.etype e.epos) *)
 
 and generateCaseBlock ctx e =
-	(* ctx.writer#begin_block; *)
-	generateExpression ctx e;
 	match e.eexpr with
-	| TBlock _ -> ()
-	| _ -> ctx.writer#write ";"; 
-	(* ctx.writer#end_block *)
+	| TBlock _ ->
+		generateExpression ctx e;
+	| _ ->
+		ctx.writer#begin_block;
+		generateExpression ctx e;
+		ctx.writer#terminate_line;
+		ctx.writer#end_block;
 	
 and generateValue ctx e =
 	(* debug ctx ("\"-V-"^(Type.s_expr_kind e)^">\""); *)
