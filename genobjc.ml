@@ -269,7 +269,7 @@ type context = {
 	mutable class_def : tclass;
 	mutable in_value : tvar option;
 	mutable in_static : bool;
-	mutable in_condition : bool;
+	mutable evaluating_condition : bool;
 	mutable is_protocol : bool;
 	mutable is_category : bool;(* In categories @synthesize should be replaced with the getter and setter *)
 	mutable handle_break : bool;
@@ -306,7 +306,7 @@ let newContext common_ctx writer imports_manager file_info = {
 	class_def = null_class;
 	in_value = None;
 	in_static = false;
-	in_condition = false;
+	evaluating_condition = false;
 	is_protocol = false;
 	is_category = false;
 	handle_break = false;
@@ -425,7 +425,7 @@ let rec isString ctx e =
 								| _ -> false
 								)
 							)
-						| TEnum _ -> ctx.writer#write "CASTTenum";false;
+						| TEnum _ -> (* ctx.writer#write "CASTTenum"; *)false;
 						| TInst (tc, tp) -> (* ctx.writer#write (snd tc.cl_path);false; *)
 							if (snd tc.cl_path) = "String" then true
 							else false
@@ -449,7 +449,7 @@ let rec isString ctx e =
 										| _ -> false
 										)
 									)
-								| TEnum _ -> ctx.writer#write "CASTTenum";false;
+								| TEnum _ -> (* ctx.writer#write "CASTTenum"; *)false;
 								| TInst (tc, tp) -> (* ctx.writer#write (snd tc.cl_path); *)
 									if (snd tc.cl_path) = "String" then true else false
 								| TType _ -> ctx.writer#write "CASTTType";false;
@@ -489,9 +489,9 @@ let rec isString ctx e =
 							if (snd ta.a_path) = "String" then true
 							else false
 					)
-				| FDynamic _ -> ctx.writer#write "isstrFDynamic";false;
+				| FDynamic _ -> (* ctx.writer#write "isstrFDynamic"; *)false;
 				| FClosure _ -> ctx.writer#write "isstrFClosure";false;
-				| FEnum _ -> ctx.writer#write "isstrFEnum";false;
+				| FEnum _ -> (* ctx.writer#write "isstrFEnum"; *)false;
 			);
 		end else b1
 	| TCall (e,el) -> isString ctx e
@@ -1290,6 +1290,12 @@ and generateExpression ctx e =
 			generateValueOp ctx e2;
 			ctx.require_pointer <- false;
 			ctx.writer#write "]";
+		end else if (s_op="==") && (isString ctx e1 or isString ctx e2) then begin
+			ctx.writer#write "[";
+			generateValueOp ctx e1;
+			ctx.writer#write " isEqualToString:";
+			generateValueOp ctx e2;
+			ctx.writer#write "]";
 		end else begin
 			ctx.generating_left_side_of_operator <- true;
 			generateValueOp ctx e1;
@@ -1320,7 +1326,7 @@ and generateExpression ctx e =
 			(* if ctx.generating_calls = 0 then ctx.generating_property_access <- true; *)
 			generateValue ctx e;
 			let f_prefix = (match tcf.cf_type with
-				| TFun _ -> if ctx.generating_left_side_of_operator && not ctx.in_condition then "hx_dyn_" else "";
+				| TFun _ -> if ctx.generating_left_side_of_operator && not ctx.evaluating_condition then "hx_dyn_" else "";
 				| _ -> "";
 			) in
 			let fan = if (ctx.generating_self_access && ctx.generating_calls>0 && ctx.generating_fields>=2) then "." 
@@ -1764,15 +1770,19 @@ and generateExpression ctx e =
 				if !inited then ctx.writer#write "]";
 		)
 	| TIf (cond,e,eelse) ->
-		ctx.in_condition <- true;
+		ctx.evaluating_condition <- true;
 		ctx.writer#write "if";
 		generateValue ctx (parent cond);
 		ctx.writer#write " ";
-		ctx.writer#begin_block;
+		let is_already_block = (match e.eexpr with
+			| TBlock _ -> true
+			| _ -> false
+		) in
+		if not is_already_block then ctx.writer#begin_block;
 		generateExpression ctx e;
-		ctx.writer#terminate_line;
-		ctx.writer#end_block;
-		ctx.in_condition <- false;
+		if not is_already_block then ctx.writer#terminate_line;
+		if not is_already_block then ctx.writer#end_block;
+		ctx.evaluating_condition <- false;
 		(match eelse with
 			| None -> ()
 			| Some e2 ->
