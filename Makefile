@@ -48,7 +48,6 @@ CC_PARSER_CMD = $(COMPILER) -pp camlp4o $(CFLAGS) -c parser.ml
 RELDIR=../../..
 
 MODULES=ast type lexer common genxml parser typecore optimizer typeload \
-
 	codegen gencommon genas3 gencpp genjs genneko genphp genswf8 \
 	genswf9 genswf genjava gencs genobjc genpy interp dce filters typer matcher version main
 
@@ -129,9 +128,9 @@ genas3.$(MODULE_EXT): type.$(MODULE_EXT) common.$(MODULE_EXT) codegen.$(MODULE_E
 
 gencommon.$(MODULE_EXT): type.$(MODULE_EXT) common.$(MODULE_EXT) codegen.$(MODULE_EXT) ast.$(MODULE_EXT)
 
-genobjc.cmx: type.cmx lexer.cmx common.cmx codegen.cmx ast.cmx
-
-gencs.cmx: type.cmx lexer.cmx gencommon.cmx common.cmx codegen.cmx ast.cmx
+# genobjc.cmx: type.cmx lexer.cmx common.cmx codegen.cmx ast.cmx
+# 
+# gencs.cmx: type.cmx lexer.cmx gencommon.cmx common.cmx codegen.cmx ast.cmx
 
 gencpp.$(MODULE_EXT): type.$(MODULE_EXT) lexer.$(MODULE_EXT) common.$(MODULE_EXT) codegen.$(MODULE_EXT) ast.$(MODULE_EXT)
 
