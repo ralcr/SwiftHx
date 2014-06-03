@@ -1293,7 +1293,7 @@ and generateExpression ctx e =
 		end else if (s_op="==") && (isString ctx e1 or isString ctx e2) then begin
 			ctx.writer#write "[";
 			generateValueOp ctx e1;
-			ctx.writer#write " isEqualToString:";
+			ctx.writer#write " isEqual:";
 			generateValueOp ctx e2;
 			ctx.writer#write "]";
 		end else begin
