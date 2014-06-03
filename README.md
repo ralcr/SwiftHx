@@ -2,6 +2,9 @@
 # [Hxobjc target](http://haxe.org)
 
 This fork contains the Hxobjc target. 
+[![Build Status](https://travis-ci.org/HaxeFoundation/haxe.png?branch=development)](https://travis-ci.org/HaxeFoundation/haxe)
+
+Haxe is an open source toolkit that allows you to easily build cross-platform tools and applications that target many mainstream platforms. The Haxe toolkit includes:
 
 
 ## Building from sources
@@ -16,6 +19,7 @@ This fork contains the Hxobjc target.
  2. You now need to hardcode the path to the new std lib. In main.ml file at line 810 change the first path to match yours:
 
 		com.class_path <- ["/Users/Cristi/Documents/haxecompiler/haxe/std/";"";"/"]
+
 
  3. Build Haxe with:
 
@@ -56,3 +60,4 @@ In case i forget this is how i merge the HF/haxe repository in my local fork
 
 	git fetch upstream
 	git merge upstream/development
+

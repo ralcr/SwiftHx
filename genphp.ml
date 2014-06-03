@@ -288,7 +288,7 @@ let escape_bin s =
 	let b = Buffer.create 0 in
 	for i = 0 to String.length s - 1 do
 		match Char.code (String.unsafe_get s i) with
-		| c when c = Char.code('\\') or c = Char.code('"') or c = Char.code('$') ->
+		| c when c = Char.code('\\') || c = Char.code('"') || c = Char.code('$') ->
 			Buffer.add_string b "\\";
 			Buffer.add_char b (Char.chr c)
 		| c when c < 32 ->
@@ -312,6 +312,7 @@ let is_keyword n =
 	| "unset" | "use" | "__function__" | "__class__" | "__method__" | "final"
 	| "php_user_filter" | "protected" | "abstract" | "__set" | "__get" | "__call"
 	| "clone" | "instanceof" | "break" | "case" | "class" | "continue" | "default" | "do" | "else" | "extends" | "for" | "function" | "if" | "new" | "return" | "static" | "switch" | "var" | "while" | "interface" | "implements" | "public" | "private" | "try" | "catch" | "throw" -> true
+	| "goto"
 	| _ -> false
 
 let s_ident n =
@@ -508,7 +509,7 @@ let fun_block ctx f p =
 	let e = List.fold_left (fun e (v,c) ->
 		match c with
 		| None | Some TNull -> e
-		| Some c -> Codegen.concat (Codegen.set_default ctx.com v c p) e
+		| Some c -> Type.concat (Codegen.set_default ctx.com v c p) e
 	) e f.tf_args in
 	if ctx.com.debug then begin
 		Codegen.stack_block ctx.stack ctx.curclass ctx.curmethod e
@@ -1158,7 +1159,7 @@ and gen_expr ctx e =
 			let se1 = s_expr_name e1 in
 			let se2 = s_expr_name e2 in
 			if
-				e1.eexpr = TConst (TNull)
+				   e1.eexpr = TConst (TNull)
 				|| e2.eexpr = TConst (TNull)
 			then begin
 				(match e1.eexpr with
@@ -1179,8 +1180,8 @@ and gen_expr ctx e =
 				| _ ->
 					gen_field_op ctx e2);
 			end else if
-					((se1 = "Int" || se1 = "Null<Int>") && (se2 = "Int" || se2 = "Null<Int>"))
-					|| ((se1 = "Float" || se1 = "Null<Float>") && (se2 = "Float" || se2 = "Null<Float>"))
+				   ((se1 = "Int" || se1 = "Null<Int>") && (se2 = "Int" || se2 = "Null<Int>"))
+				|| ((se1 = "Float" || se1 = "Null<Float>") && (se2 = "Float" || se2 = "Null<Float>"))
 			then begin
 				gen_field_op ctx e1;
 				spr ctx s_phop;
@@ -1217,9 +1218,14 @@ and gen_expr ctx e =
 				spr ctx s_phop;
 				gen_field_op ctx e2;
 			end else begin
+				let tmp = define_local ctx "_t" in
+				print ctx "(is_object($%s = " tmp;
 				gen_field_op ctx e1;
-				spr ctx s_op;
+				print ctx ") && !($%s instanceof Enum) ? $%s%s" tmp tmp s_phop;
 				gen_field_op ctx e2;
+				print ctx " : $%s%s" tmp s_op;
+				gen_field_op ctx e2;
+				spr ctx ")";
 			end
 		| _ ->
 			leftside e1;
@@ -1244,7 +1250,7 @@ and gen_expr ctx e =
 			spr ctx ")"
 		);
 	| TMeta (_,e) ->
-		gen_value ctx e
+		gen_expr ctx e
 	| TReturn eo ->
 		(match eo with
 		| None ->
@@ -1371,30 +1377,26 @@ and gen_expr ctx e =
 		| _ ->
 			gen_call ctx ec el);
 	| TArrayDecl el ->
-		spr ctx "new _hx_array(array(";
+		spr ctx "(new _hx_array(array(";
 		concat ctx ", " (gen_value ctx) el;
-		spr ctx "))";
+		spr ctx ")))";
 	| TThrow e ->
 		spr ctx "throw new HException(";
 		gen_value ctx e;
 		spr ctx ")";
-	| TVars [] ->
-		()
-	| TVars vl ->
+	| TVar (v,eo) ->
 		spr ctx "$";
-		concat ctx ("; $") (fun (v,e) ->
-			let restore = save_locals ctx in
-			let n = define_local ctx v.v_name in
-			let restore2 = save_locals ctx in
-			restore();
-			(match e with
-			| None ->
-				print ctx "%s = null" (s_ident_local n)
-			| Some e ->
-				print ctx "%s = " (s_ident_local n);
-				gen_value ctx e);
-			restore2()
-		) vl;
+		let restore = save_locals ctx in
+		let n = define_local ctx v.v_name in
+		let restore2 = save_locals ctx in
+		restore();
+		(match eo with
+		| None ->
+			print ctx "%s = null" (s_ident_local n)
+		| Some e ->
+			print ctx "%s = " (s_ident_local n);
+			gen_value ctx e);
+		restore2()
 	| TNew (c,_,el) ->
 		(match c.cl_path, el with
 		| ([], "String"), _ ->
@@ -1514,6 +1516,9 @@ and gen_expr ctx e =
 		newline ctx;
 		print ctx "while($%s->hasNext()) {" tmp;
 		let bend = open_block ctx in
+		newline ctx;
+		(* unset loop variable (issue #2900) *)
+		print ctx "unset($%s)" v;
 		newline ctx;
 		print ctx "$%s = $%s->next()" v tmp;
 		gen_while_expr ctx e;
@@ -1725,7 +1730,6 @@ and gen_value ctx e =
 	| TEnumParameter _
 	| TField _
 	| TParenthesis _
-	| TMeta _
 	| TObjectDecl _
 	| TArrayDecl _
 	| TCall _
@@ -1733,6 +1737,8 @@ and gen_value ctx e =
 	| TNew _
 	| TFunction _ ->
 		gen_expr ctx e
+	| TMeta (_,e1) ->
+		gen_value ctx e1
 	| TBlock [] ->
 		()
 	| TCast (e, _)
@@ -1769,7 +1775,7 @@ and gen_value ctx e =
 	| TBlock _
 	| TBreak
 	| TContinue
-	| TVars _
+	| TVar _
 	| TReturn _
 	| TWhile _
 	| TThrow _
@@ -2218,7 +2224,7 @@ let generate com =
 							if static then
 								(n = (prefixed_name false))
 							else
-								((n = (prefixed_name false)) or (n = (prefixed_name true)))
+								((n = (prefixed_name false)) || (n = (prefixed_name true)))
 						) !lc_names in
 						unsupported ("method '" ^ (s_type_path c.cl_path) ^ "." ^ cf.cf_name ^ "' already exists here '" ^ (fst lc) ^ "' (different case?)") c.cl_pos
 					with Not_found ->
@@ -2297,7 +2303,7 @@ let generate com =
 					newline ctx;
 					gen_expr ctx e);
 				List.iter (generate_static_field_assign ctx c.cl_path) c.cl_ordered_statics;
-				if c.cl_path = (["php"], "Boot") & com.debug then begin
+				if c.cl_path = (["php"], "Boot") && com.debug then begin
 					newline ctx;
 					print ctx "$%s = new _hx_array(array())" ctx.stack.Codegen.stack_var;
 					newline ctx;

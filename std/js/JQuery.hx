@@ -56,7 +56,7 @@ typedef JqEvent = {
 	// propagation
 	function isDefaultPrevented() : Bool;
 	function isImmediatePropagationStopped() : Bool;
-	function isPropationStopped() : Bool;
+	function isPropagationStopped() : Bool;
 	function preventDefault() : Void;
 	function stopImmediatePropagation() : Void;
 	function stopPropagation() : Void;
@@ -69,7 +69,7 @@ extern class JQueryHelper {
 	public static inline function J( html : String ) : JQuery {
 		return new JQuery(html);
 	}
-	
+
 	public static var JTHIS(get, null) : JQuery;
 
 	static inline function get_JTHIS() : JQuery {
@@ -390,7 +390,7 @@ extern class JQuery implements ArrayAccess<Element> {
 	//static function is*, makeArray, map, merge, noop, now, param, proxy, sub, trim, type, unique
 
 	private static inline function get_cur() : JQuery {
-		return untyped __js__("$(this)");
+		return untyped $(__js__("this"));
 	}
 
 	private static function __init__() : Void untyped {
@@ -398,7 +398,7 @@ extern class JQuery implements ArrayAccess<Element> {
 		if( untyped __js__("typeof($) == 'undefined'") )
 			haxe.macro.Compiler.includeFile("js/jquery-latest.min.js");
 		#end
-		var q : Dynamic = window.jQuery;
+		var q : Dynamic = (untyped js.Browser.window).jQuery;
 		js.JQuery = q;
 		__feature__('js.JQuery.iterator',
 			q.fn.iterator = function() return { pos : 0, j : __this__, hasNext : function() return __this__.pos < __this__.j.length, next : function() return $(__this__.j[__this__.pos++]) }

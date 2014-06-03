@@ -45,6 +45,7 @@ type ctx = {
 	packages : (string list,unit) Hashtbl.t;
 	smap : sourcemap;
 	js_modern : bool;
+	js_flatten : bool;
 	mutable current : tclass;
 	mutable statics : (tclass * string * texpr) list;
 	mutable inits : texpr list;
@@ -58,7 +59,32 @@ type ctx = {
 	mutable found_expose : bool;
 }
 
-let s_path ctx = Ast.s_type_path
+type object_store = {
+	os_name : string;
+	mutable os_fields : object_store list;
+}
+
+let get_exposed ctx path meta =
+	if not ctx.js_modern then []
+	else try
+		let (_, args, pos) = Meta.get Meta.Expose meta in
+		(match args with
+			| [ EConst (String s), _ ] -> [s]
+			| [] -> [path]
+			| _ -> error "Invalid @:expose parameters" pos)
+	with Not_found -> []
+
+let dot_path = Ast.s_type_path
+
+let flat_path (p,s) =
+	(* Replace _ with _$ in paths to prevent name collisions. *)
+	let escape str = String.concat "_$" (ExtString.String.nsplit str "_") in
+
+	match p with
+	| [] -> escape s
+	| _ -> String.concat "_" (List.map escape p) ^ "_" ^ (escape s)
+
+let s_path ctx = if ctx.js_flatten then flat_path else dot_path
 
 let kwds =
 	let h = Hashtbl.create 0 in
@@ -66,9 +92,22 @@ let kwds =
 		"abstract"; "as"; "boolean"; "break"; "byte"; "case"; "catch"; "char"; "class"; "continue"; "const";
 		"debugger"; "default"; "delete"; "do"; "double"; "else"; "enum"; "export"; "extends"; "false"; "final";
 		"finally"; "float"; "for"; "function"; "goto"; "if"; "implements"; "import"; "in"; "instanceof"; "int";
-		"interface"; "is"; "long"; "namespace"; "native"; "new"; "null"; "package"; "private"; "protected";
+		"interface"; "is"; "let"; "long"; "namespace"; "native"; "new"; "null"; "package"; "private"; "protected";
 		"public"; "return"; "short"; "static"; "super"; "switch"; "synchronized"; "this"; "throw"; "throws";
-		"transient"; "true"; "try"; "typeof"; "use"; "var"; "void"; "volatile"; "while"; "with"
+		"transient"; "true"; "try"; "typeof"; "use"; "var"; "void"; "volatile"; "while"; "with"; "yield"
+	];
+	h
+
+(* Identifiers Haxe reserves to make the JS output cleaner. These can still be used in untyped code (TLocal),
+   but are escaped upon declaration. *)
+let kwds2 =
+	let h = Hashtbl.create 0 in
+	List.iter (fun s -> Hashtbl.add h s ()) [
+		(* https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects *)
+		"Infinity"; "NaN"; "decodeURI"; "decodeURIComponent"; "encodeURI"; "encodeURIComponent";
+		"escape"; "eval"; "isFinite"; "isNaN"; "parseFloat"; "parseInt"; "undefined"; "unescape";
+
+		"JSON"; "Number"; "Object"; "console"; "window"; "require";
 	];
 	h
 
@@ -86,6 +125,8 @@ let valid_js_ident s =
 
 let field s = if Hashtbl.mem kwds s then "[\"" ^ s ^ "\"]" else "." ^ s
 let ident s = if Hashtbl.mem kwds s then "$" ^ s else s
+let check_var_declaration v = if Hashtbl.mem kwds2 v.v_name then v.v_name <- "$" ^ v.v_name
+
 let anon_field s = if Hashtbl.mem kwds s || not (valid_js_ident s) then "'" ^ s ^ "'" else s
 let static_field s =
 	match s with
@@ -202,11 +243,16 @@ let write_mappings ctx =
 	in
 	output_string channel "{\n";
 	output_string channel "\"version\":3,\n";
-	output_string channel ("\"file\":\"" ^ basefile ^ "\",\n");
+	output_string channel ("\"file\":\"" ^ (String.concat "\\\\" (ExtString.String.nsplit basefile "\\")) ^ "\",\n");
 	output_string channel ("\"sourceRoot\":\"file://\",\n");
 	output_string channel ("\"sources\":[" ^
 		(String.concat "," (List.map (fun s -> "\"" ^ to_url s ^ "\"") sources)) ^
 		"],\n");
+	if Common.defined ctx.com Define.SourceMapContent then begin
+		output_string channel ("\"sourcesContent\":[" ^
+			(String.concat "," (List.map (fun s -> try "\"" ^ Ast.s_escape (Std.input_file ~bin:true s) ^ "\"" with _ -> "null") sources)) ^
+			"],\n");
+	end;
 	output_string channel "\"names\":[],\n";
 	output_string channel "\"mappings\":\"";
 	Buffer.output_buffer channel ctx.smap.mappings;
@@ -241,7 +287,7 @@ let fun_block ctx f p =
 	let e = List.fold_left (fun e (a,c) ->
 		match c with
 		| None | Some TNull -> e
-		| Some c -> Codegen.concat (Codegen.set_default ctx.com a c p) e
+		| Some c -> Type.concat (Codegen.set_default ctx.com a c p) e
 	) f.tf_expr f.tf_args in
 	e
 
@@ -288,27 +334,19 @@ let handle_break ctx e =
 				spr ctx "} catch( e ) { if( e != \"__break__\" ) throw e; }";
 			)
 
-let handle_expose ctx path meta =
-	let rec loop = function
-		| (Meta.Expose, args, pos) :: l when ctx.js_modern ->
-			ctx.found_expose <- true;
-			let exposed_path = (match args with
-				| [EConst (String s), _] -> s
-				| [] -> path
-				| _ -> error "Invalid @:expose parameters" pos
-			) in
-			print ctx "$hxExpose(%s, \"%s\")" path exposed_path;
-			newline ctx
-		| _ :: l -> loop l
-		| [] -> ()
-	in
-	loop meta
-
 let this ctx = match ctx.in_value with None -> "this" | Some _ -> "$this"
 
 let is_dynamic_iterator ctx e =
 	let check x =
-		has_feature ctx "HxOverrides.iter" && (match follow x.etype with TInst ({ cl_path = [],"Array" },_) | TAnon _ | TDynamic _ | TMono _ -> true | _ -> false)
+		has_feature ctx "HxOverrides.iter" && (match follow x.etype with
+			| TInst ({ cl_path = [],"Array" },_)
+			| TInst ({ cl_kind = KTypeParameter _}, _)
+			| TAnon _
+			| TDynamic _
+			| TMono _ ->
+				true
+			| _ -> false
+		)
 	in
 	match e.eexpr with
 	| TField (x,f) when field_name f = "iterator" -> check x
@@ -318,9 +356,7 @@ let is_dynamic_iterator ctx e =
 let gen_constant ctx p = function
 	| TInt i -> print ctx "%ld" i
 	| TFloat s -> spr ctx s
-	| TString s ->
-		if String.contains s '\000' then error "A String cannot contain \\0 characters" p;
-		print ctx "\"%s\"" (Ast.s_escape s)
+	| TString s -> print ctx "\"%s\"" (Ast.s_escape s)
 	| TBool b -> spr ctx (if b then "true" else "false")
 	| TNull -> spr ctx "null"
 	| TThis -> spr ctx (this ctx)
@@ -362,6 +398,8 @@ let rec gen_call ctx e el in_value =
 		spr ctx "(";
 		concat ctx "," (gen_value ctx) params;
 		spr ctx ")";
+	| TLocal { v_name = "__js__" }, [{ eexpr = TConst (TString "this") }] ->
+		spr ctx (this ctx)
 	| TLocal { v_name = "__js__" }, [{ eexpr = TConst (TString code) }] ->
 		spr ctx (String.concat "\n" (ExtString.String.nsplit code "\r\n"))
 	| TLocal { v_name = "__instanceof__" },  [o;t] ->
@@ -369,6 +407,24 @@ let rec gen_call ctx e el in_value =
 		gen_value ctx o;
 		print ctx " instanceof ";
 		gen_value ctx t;
+		spr ctx ")";
+	| TLocal { v_name = "__typeof__" },  [o] ->
+		spr ctx "typeof(";
+		gen_value ctx o;
+		spr ctx ")";
+	| TLocal { v_name = "__strict_eq__" } , [x;y] ->
+		(* add extra parenthesis here because of operator precedence *)
+		spr ctx "((";
+		gen_value ctx x;
+		spr ctx ") === ";
+		gen_value ctx y;
+		spr ctx ")";
+	| TLocal { v_name = "__strict_neq__" } , [x;y] ->
+		(* add extra parenthesis here because of operator precedence *)
+		spr ctx "((";
+		gen_value ctx x;
+		spr ctx ") !== ";
+		gen_value ctx y;
 		spr ctx ")";
 	| TLocal ({v_name = "__define_feature__"}), [_;e] ->
 		gen_expr ctx e
@@ -414,7 +470,7 @@ and gen_expr ctx e =
 	match e.eexpr with
 	| TConst c -> gen_constant ctx e.epos c
 	| TLocal v -> spr ctx (ident v.v_name)
-	| TArray (e1,{ eexpr = TConst (TString s) }) when valid_js_ident s ->
+	| TArray (e1,{ eexpr = TConst (TString s) }) when valid_js_ident s && (match e1.eexpr with TConst (TInt _|TFloat _) -> false | _ -> true) ->
 		gen_value ctx e1;
 		spr ctx (field s)
 	| TArray (e1,e2) ->
@@ -452,10 +508,12 @@ and gen_expr ctx e =
 	| TEnumParameter (x,_,i) ->
 		gen_value ctx x;
 		print ctx "[%i]" (i + 2)
+	| TField ({ eexpr = TConst (TInt _ | TFloat _) } as x,f) ->
+		gen_expr ctx { e with eexpr = TField(mk (TParenthesis x) x.etype x.epos,f) }
 	| TField (x,f) ->
 		gen_value ctx x;
 		let name = field_name f in
-		spr ctx (match f with FStatic _ | FEnum _ -> static_field name | FInstance _ | FAnon _ | FDynamic _ | FClosure _ -> field name)
+		spr ctx (match f with FStatic _ -> static_field name | FEnum _ | FInstance _ | FAnon _ | FDynamic _ | FClosure _ -> field name)
 	| TTypeExpr t ->
 		spr ctx (ctx.type_accessor t)
 	| TParenthesis e ->
@@ -463,7 +521,7 @@ and gen_expr ctx e =
 		gen_value ctx e;
 		spr ctx ")";
 	| TMeta (_,e) ->
-		gen_value ctx e
+		gen_expr ctx e
 	| TReturn eo ->
 		if ctx.in_value <> None then unsupported e.epos;
 		(match eo with
@@ -481,7 +539,7 @@ and gen_expr ctx e =
 	| TBlock el ->
 		print ctx "{";
 		let bend = open_block ctx in
-		List.iter (gen_block ctx) el;
+		List.iter (gen_block_element ctx) el;
 		bend();
 		newline ctx;
 		print ctx "}";
@@ -503,18 +561,16 @@ and gen_expr ctx e =
 	| TThrow e ->
 		spr ctx "throw ";
 		gen_value ctx e;
-	| TVars [] ->
-		()
-	| TVars vl ->
+	| TVar (v,eo) ->
 		spr ctx "var ";
-		concat ctx ", " (fun (v,e) ->
-			spr ctx (ident v.v_name);
-			match e with
+		check_var_declaration v;
+		spr ctx (ident v.v_name);
+		begin match eo with
 			| None -> ()
 			| Some e ->
 				spr ctx " = ";
 				gen_value ctx e
-		) vl;
+		end
 	| TNew (c,_,el) ->
 		print ctx "new %s(" (ctx.type_accessor (TClassDecl c));
 		concat ctx "," (gen_value ctx) el;
@@ -560,6 +616,7 @@ and gen_expr ctx e =
 		spr ctx "}";
 		ctx.separator <- true
 	| TFor (v,it,e) ->
+		check_var_declaration v;
 		let handle_break = handle_break ctx e in
 		let it = ident (match it.eexpr with
 			| TLocal v -> v.v_name
@@ -576,7 +633,7 @@ and gen_expr ctx e =
 		let bend = open_block ctx in
 		newline ctx;
 		print ctx "var %s = %s.next()" (ident v.v_name) it;
-		gen_block ctx e;
+		gen_block_element ctx e;
 		bend();
 		newline ctx;
 		spr ctx "}";
@@ -584,7 +641,7 @@ and gen_expr ctx e =
 	| TTry (e,catchs) ->
 		spr ctx "try ";
 		gen_expr ctx e;
-		let vname = (match catchs with [(v,_)] -> v.v_name | _ ->
+		let vname = (match catchs with [(v,_)] -> check_var_declaration v; v.v_name | _ ->
 			let id = ctx.id_counter in
 			ctx.id_counter <- ctx.id_counter + 1;
 			"$e" ^ string_of_int id
@@ -616,7 +673,7 @@ and gen_expr ctx e =
 					newline ctx;
 					print ctx "var %s = %s" v.v_name vname;
 				end;
-				gen_block ctx e;
+				gen_block_element ctx e;
 				if !else_block then begin
 					newline ctx;
 					print ctx "}";
@@ -631,7 +688,7 @@ and gen_expr ctx e =
 					newline ctx;
 					print ctx "var %s = %s" v.v_name vname;
 				end;
-				gen_block ctx e;
+				gen_block_element ctx e;
 				bend();
 				newline ctx;
 				spr ctx "} else ";
@@ -658,7 +715,7 @@ and gen_expr ctx e =
 					spr ctx ":"
 			) el;
 			let bend = open_block ctx in
-			gen_block ctx e2;
+			gen_block_element ctx e2;
 			if not (has_return e2) then begin
 				newline ctx;
 				print ctx "break";
@@ -671,7 +728,7 @@ and gen_expr ctx e =
 		| Some e ->
 			spr ctx "default:";
 			let bend = open_block ctx in
-			gen_block ctx e;
+			gen_block_element ctx e;
 			bend();
 			newline ctx;
 		);
@@ -679,24 +736,26 @@ and gen_expr ctx e =
 	| TCast (e,None) ->
 		gen_expr ctx e
 	| TCast (e1,Some t) ->
-		spr ctx "js.Boot.__cast(";
+		print ctx "%s.__cast(" (ctx.type_accessor (TClassDecl { null_class with cl_path = ["js"],"Boot" }));
 		gen_expr ctx e1;
 		spr ctx " , ";
 		spr ctx (ctx.type_accessor t);
 		spr ctx ")"
 
 
-and gen_block ?(after=false) ctx e =
+and gen_block_element ?(after=false) ctx e =
 	match e.eexpr with
 	| TBlock el ->
-		List.iter (gen_block ~after ctx) el
+		List.iter (gen_block_element ~after ctx) el
 	| TCall ({ eexpr = TLocal { v_name = "__feature__" } }, { eexpr = TConst (TString f) } :: eif :: eelse) ->
 		if has_feature ctx f then
-			gen_block ~after ctx eif
+			gen_block_element ~after ctx eif
 		else (match eelse with
 			| [] -> ()
-			| [e] -> gen_block ~after ctx e
+			| [e] -> gen_block_element ~after ctx e
 			| _ -> assert false)
+	| TFunction _ ->
+		gen_block_element ~after ctx (mk (TParenthesis e) e.etype e.epos)
 	| _ ->
 		if not after then newline ctx;
 		gen_expr ctx e;
@@ -741,13 +800,14 @@ and gen_value ctx e =
 	| TEnumParameter _
 	| TTypeExpr _
 	| TParenthesis _
-	| TMeta _
 	| TObjectDecl _
 	| TArrayDecl _
 	| TNew _
 	| TUnop _
 	| TFunction _ ->
 		gen_expr ctx e
+	| TMeta (_,e1) ->
+		gen_value ctx e1
 	| TCall (e,el) ->
 		gen_call ctx e el true
 	| TReturn _
@@ -757,12 +817,12 @@ and gen_value ctx e =
 	| TCast (e1, None) ->
 		gen_value ctx e1
 	| TCast (e1, Some t) ->
-		spr ctx "js.Boot.__cast(";
+		print ctx "%s.__cast(" (ctx.type_accessor (TClassDecl { null_class with cl_path = ["js"],"Boot" }));
 		gen_value ctx e1;
 		spr ctx " , ";
 		spr ctx (ctx.type_accessor t);
 		spr ctx ")"
-	| TVars _
+	| TVar _
 	| TFor _
 	| TWhile _
 	| TThrow _ ->
@@ -835,6 +895,7 @@ let generate_package_create ctx (p,_) =
 				else
 					print ctx "if(!%s) %s = {}" p p
 			);
+			ctx.separator <- true;
 			newline ctx;
 			loop (p :: acc) l
 	in
@@ -863,10 +924,9 @@ let gen_class_static_field ctx c f =
 			let path = (s_path ctx c.cl_path) ^ (static_field f.cf_name) in
 			ctx.id_counter <- 0;
 			print ctx "%s = " path;
+			(match (get_exposed ctx path f.cf_meta) with [s] -> print ctx "$hx_exports.%s = " s | _ -> ());
 			gen_value ctx e;
-			ctx.separator <- false;
 			newline ctx;
-			handle_expose ctx path f.cf_meta
 		| _ ->
 			ctx.statics <- (c,f.cf_name,e) :: ctx.statics
 
@@ -890,6 +950,17 @@ let gen_class_field ctx c f =
 		gen_value ctx e;
 		ctx.separator <- false
 
+let generate_class___name__ ctx c =
+	if has_feature ctx "js.Boot.isClass" then begin
+		let p = s_path ctx c.cl_path in
+		print ctx "%s.__name__ = " p;
+		if has_feature ctx "Type.getClassName" then
+			print ctx "[%s]" (String.concat "," (List.map (fun s -> Printf.sprintf "\"%s\"" (Ast.s_escape s)) (fst c.cl_path @ [snd c.cl_path])))
+		else
+			print ctx "true";
+		newline ctx;
+	end
+
 let generate_class ctx c =
 	ctx.current <- c;
 	ctx.id_counter <- 0;
@@ -897,29 +968,25 @@ let generate_class ctx c =
 	| [],"Function" -> error "This class redefine a native one" c.cl_pos
 	| _ -> ());
 	let p = s_path ctx c.cl_path in
-	generate_package_create ctx c.cl_path;
 	let hxClasses = has_feature ctx "Type.resolveClass" in
+	if ctx.js_flatten then
+		print ctx "var "
+	else
+		generate_package_create ctx c.cl_path;
 	if ctx.js_modern || not hxClasses then
 		print ctx "%s = " p
 	else
-		print ctx "%s = $hxClasses[\"%s\"] = " p p;
+		print ctx "%s = $hxClasses[\"%s\"] = " p (dot_path c.cl_path);
+	(match (get_exposed ctx p c.cl_meta) with [s] -> print ctx "$hx_exports.%s = " s | _ -> ());
 	(match c.cl_constructor with
 	| Some { cf_expr = Some e } -> gen_expr ctx e
-	| _ -> print ctx "function() { }");
+	| _ -> (print ctx "function() { }"); ctx.separator <- true);
 	newline ctx;
 	if ctx.js_modern && hxClasses then begin
-		print ctx "$hxClasses[\"%s\"] = %s" p p;
+		print ctx "$hxClasses[\"%s\"] = %s" (dot_path c.cl_path) p;
 		newline ctx;
 	end;
-	handle_expose ctx p c.cl_meta;
-	if has_feature ctx "js.Boot.isClass" then begin
-		print ctx "%s.__name__ = " p;
-		if has_feature ctx "Type.getClassName" then
-			print ctx "[%s]" (String.concat "," (List.map (fun s -> Printf.sprintf "\"%s\"" (Ast.s_escape s)) (fst c.cl_path @ [snd c.cl_path])))
-		else
-			print ctx "true";
-		newline ctx;
-	end;
+	generate_class___name__ ctx c;
 	(match c.cl_implements with
 	| [] -> ()
 	| l ->
@@ -976,19 +1043,23 @@ let generate_class ctx c =
 
 		bend();
 		print ctx "\n}";
-		(match c.cl_super with None -> () | _ -> print ctx ")");
+		(match c.cl_super with None -> ctx.separator <- true | _ -> print ctx ")");
 		newline ctx
 	end
 
 let generate_enum ctx e =
 	let p = s_path ctx e.e_path in
-	generate_package_create ctx e.e_path;
 	let ename = List.map (fun s -> Printf.sprintf "\"%s\"" (Ast.s_escape s)) (fst e.e_path @ [snd e.e_path]) in
+	if ctx.js_flatten then
+		print ctx "var "
+	else
+		generate_package_create ctx e.e_path;
 	print ctx "%s = " p;
-	if has_feature ctx "Type.resolveEnum" then print ctx "$hxClasses[\"%s\"] = " p;
+	if has_feature ctx "Type.resolveEnum" then print ctx "$hxClasses[\"%s\"] = " (dot_path e.e_path);
 	print ctx "{";
 	if has_feature ctx "js.Boot.isEnum" then print ctx " __ename__ : %s," (if has_feature ctx "Type.getEnumName" then "[" ^ String.concat "," ename ^ "]" else "true");
 	print ctx " __constructs__ : [%s] }" (String.concat "," (List.map (fun s -> Printf.sprintf "\"%s\"" s) e.e_names));
+	ctx.separator <- true;
 	newline ctx;
 	List.iter (fun n ->
 		let f = PMap.find n e.e_constrs in
@@ -996,16 +1067,32 @@ let generate_enum ctx e =
 		(match f.ef_type with
 		| TFun (args,_) ->
 			let sargs = String.concat "," (List.map (fun (n,_,_) -> ident n) args) in
-			print ctx "function(%s) { var $x = [\"%s\",%d,%s]; $x.__enum__ = %s; $x.toString = $estr; return $x; }" sargs f.ef_name f.ef_index sargs p;
+			print ctx "function(%s) { var $x = [\"%s\",%d,%s]; $x.__enum__ = %s;" sargs f.ef_name f.ef_index sargs p;
+			if has_feature ctx "may_print_enum" then
+				spr ctx " $x.toString = $estr;";
+			spr ctx " return $x; }";
+			ctx.separator <- true;
 		| _ ->
 			print ctx "[\"%s\",%d]" f.ef_name f.ef_index;
 			newline ctx;
-			print ctx "%s%s.toString = $estr" p (field f.ef_name);
-			newline ctx;
+			if has_feature ctx "may_print_enum" then begin
+				print ctx "%s%s.toString = $estr" p (field f.ef_name);
+				newline ctx;
+			end;
 			print ctx "%s%s.__enum__ = %s" p (field f.ef_name) p;
 		);
 		newline ctx
 	) e.e_names;
+	if has_feature ctx "Type.allEnums" then begin
+		let ctors_without_args = List.filter (fun s ->
+			let ef = PMap.find s e.e_constrs in
+			match follow ef.ef_type with
+				| TFun _ -> false
+				| _ -> true
+		) e.e_names in
+		print ctx "%s.__empty_constructs__ = [%s]" p (String.concat "," (List.map (fun s -> Printf.sprintf "%s.%s" p s) ctors_without_args));
+		newline ctx
+	end;
 	match Codegen.build_metadata ctx.com (TEnumDecl e) with
 	| None -> ()
 	| Some e ->
@@ -1018,13 +1105,42 @@ let generate_static ctx (c,f,e) =
 	gen_value ctx e;
 	newline ctx
 
+let generate_require ctx c =
+	let _, args, mp = Meta.get Meta.JsRequire c.cl_meta in
+	let p = (s_path ctx c.cl_path) in
+
+	if ctx.js_flatten then
+		spr ctx "var "
+	else
+		generate_package_create ctx c.cl_path;
+
+	(match args with
+	| [(EConst(String(module_name)),_)] ->
+		print ctx "%s = require(\"%s\")" p module_name
+	| [(EConst(String(module_name)),_) ; (EConst(String(object_path)),_)] ->
+		print ctx "%s = require(\"%s\").%s" p module_name object_path
+	| _ ->
+		error "Unsupported @:jsRequire format" mp);
+
+	newline ctx
+
 let generate_type ctx = function
 	| TClassDecl c ->
 		(match c.cl_init with
 		| None -> ()
 		| Some e ->
 			ctx.inits <- e :: ctx.inits);
-		if not c.cl_extern then generate_class ctx c else if Meta.has Meta.InitPackage c.cl_meta then generate_package_create ctx c.cl_path
+		(* Special case, want to add Math.__name__ only when required, handle here since Math is extern *)
+		let p = s_path ctx c.cl_path in
+		if p = "Math" then generate_class___name__ ctx c;
+		if not c.cl_extern then
+			generate_class ctx c
+		else if Meta.has Meta.JsRequire c.cl_meta then
+			generate_require ctx c
+		else if not ctx.js_flatten && Meta.has Meta.InitPackage c.cl_meta then
+			(match c.cl_path with
+			| ([],_) -> ()
+			| _ -> generate_package_create ctx c.cl_path)
 	| TEnumDecl e when e.e_extern ->
 		()
 	| TEnumDecl e -> generate_enum ctx e
@@ -1050,6 +1166,7 @@ let alloc_ctx com =
 			mappings = Buffer.create 16;
 		};
 		js_modern = not (Common.defined com Define.JsClassic);
+		js_flatten = Common.defined com Define.JsFlatten;
 		statics = [];
 		inits = [];
 		current = null_class;
@@ -1062,7 +1179,14 @@ let alloc_ctx com =
 		separator = false;
 		found_expose = false;
 	} in
-	ctx.type_accessor <- (fun t -> s_path ctx (t_path t));
+	ctx.type_accessor <- (fun t ->
+		let p = t_path t in
+		match t with
+		| TClassDecl ({ cl_extern = true } as c) when not (Meta.has Meta.JsRequire c.cl_meta)
+			-> dot_path p
+		| TEnumDecl { e_extern = true }
+			-> dot_path p
+		| _ -> s_path ctx p);
 	ctx
 
 let gen_single_expr ctx e expr =
@@ -1082,18 +1206,70 @@ let generate com =
 	if has_feature ctx "Class" || has_feature ctx "Type.getClassName" then add_feature ctx "js.Boot.isClass";
 	if has_feature ctx "Enum" || has_feature ctx "Type.getEnumName" then add_feature ctx "js.Boot.isEnum";
 
+	let exposed = List.concat (List.map (fun t ->
+		match t with
+			| TClassDecl c ->
+				let path = s_path ctx c.cl_path in
+				let class_exposed = get_exposed ctx path c.cl_meta in
+				let static_exposed = List.map (fun f ->
+					get_exposed ctx (path ^ static_field f.cf_name) f.cf_meta
+				) c.cl_ordered_statics in
+				List.concat (class_exposed :: static_exposed)
+			| _ -> []
+		) com.types) in
+	let anyExposed = exposed <> [] in
+	let exportMap = ref (PMap.create String.compare) in
+	let exposedObject = { os_name = ""; os_fields = [] } in
+	let toplevelExposed = ref [] in
+	List.iter (fun path -> (
+		let parts = ExtString.String.nsplit path "." in
+		let rec loop p pre = match p with
+			| f :: g :: ls ->
+				let path = match pre with "" -> f | pre -> (pre ^ "." ^ f) in
+				if not (PMap.exists path !exportMap) then (
+					let elts = { os_name = f; os_fields = [] } in
+					exportMap := PMap.add path elts !exportMap;
+					let cobject = match pre with "" -> exposedObject | pre -> PMap.find pre !exportMap in
+					cobject.os_fields <- elts :: cobject.os_fields
+				);
+				loop (g :: ls) path;
+			| f :: [] when pre = "" ->
+				toplevelExposed := f :: !toplevelExposed;
+			| _ -> ()
+		in loop parts "";
+	)) exposed;
+
 	if ctx.js_modern then begin
 		(* Additional ES5 strict mode keywords. *)
 		List.iter (fun s -> Hashtbl.replace kwds s ()) [ "arguments"; "eval" ];
 
-		(* Wrap output in a closure. *)
-		print ctx "(function () { \"use strict\"";
+		(* Wrap output in a closure *)
+		if (anyExposed && (Common.defined com Define.ShallowExpose)) then (
+			print ctx "var $hx_exports = $hx_exports || {}";
+			ctx.separator <- true;
+			newline ctx
+		);
+		print ctx "(function (";
+		if (anyExposed && not (Common.defined com Define.ShallowExpose)) then print ctx "$hx_exports";
+		print ctx ") { \"use strict\"";
 		newline ctx;
+		let rec print_obj f root = (
+			let path = root ^ "." ^ f.os_name in
+			print ctx "%s = %s || {}" path path;
+			ctx.separator <- true;
+			newline ctx;
+			concat ctx ";" (fun g -> print_obj g path) f.os_fields
+		)
+		in
+		List.iter (fun f -> print_obj f "$hx_exports") exposedObject.os_fields;
 	end;
 
+	(* TODO: fix $estr *)
 	let vars = [] in
 	let vars = (if has_feature ctx "Type.resolveClass" || has_feature ctx "Type.resolveEnum" then ("$hxClasses = " ^ (if ctx.js_modern then "{}" else "$hxClasses || {}")) :: vars else vars) in
-	let vars = (if List.exists (function TEnumDecl { e_extern = false } -> true | _ -> false) com.types then "$estr = function() { return js.Boot.__string_rec(this,''); }" :: vars else vars) in
+	let vars = if has_feature ctx "may_print_enum"
+		then ("$estr = function() { return " ^ (ctx.type_accessor (TClassDecl { null_class with cl_path = ["js"],"Boot" })) ^ ".__string_rec(this,''); }") :: vars
+		else vars in
 	(match List.rev vars with
 	| [] -> ()
 	| vl ->
@@ -1103,7 +1279,7 @@ let generate com =
 	);
 	if List.exists (function TClassDecl { cl_extern = false; cl_super = Some _ } -> true | _ -> false) com.types then begin
 		print ctx "function $extend(from, fields) {
-	function inherit() {}; inherit.prototype = from; var proto = new inherit();
+	function Inherit() {} Inherit.prototype = from; var proto = new Inherit();
 	for (var name in fields) proto[name] = fields[name];
 	if( fields.toString !== Object.prototype.toString ) proto.toString = fields.toString;
 	return proto;
@@ -1124,39 +1300,39 @@ let generate com =
 	if has_feature ctx "use.$iterator" then begin
 		add_feature ctx "use.$bind";
 		print ctx "function $iterator(o) { if( o instanceof Array ) return function() { return HxOverrides.iter(o); }; return typeof(o.iterator) == 'function' ? $bind(o,o.iterator) : o.iterator; }";
-		ctx.separator <- true;
 		newline ctx;
 	end;
 	if has_feature ctx "use.$bind" then begin
 		print ctx "var $_, $fid = 0";
 		newline ctx;
 		print ctx "function $bind(o,m) { if( m == null ) return null; if( m.__id__ == null ) m.__id__ = $fid++; var f; if( o.hx__closures__ == null ) o.hx__closures__ = {}; else f = o.hx__closures__[m.__id__]; if( f == null ) { f = function(){ return f.method.apply(f.scope, arguments); }; f.scope = o; f.method = m; o.hx__closures__[m.__id__] = f; } return f; }";
-		ctx.separator <- true;
 		newline ctx;
 	end;
-	List.iter (gen_block ~after:true ctx) (List.rev ctx.inits);
+	List.iter (gen_block_element ~after:true ctx) (List.rev ctx.inits);
 	List.iter (generate_static ctx) (List.rev ctx.statics);
 	(match com.main with
 	| None -> ()
 	| Some e -> gen_expr ctx e; newline ctx);
-	if ctx.found_expose then begin
-        (* TODO(bruno): Remove runtime branching when standard node haxelib is available *)
-		print ctx
-"function $hxExpose(src, path) {
-	var o = typeof window != \"undefined\" ? window : exports;
-	var parts = path.split(\".\");
-	for(var ii = 0; ii < parts.length-1; ++ii) {
-		var p = parts[ii];
-		if(typeof o[p] == \"undefined\") o[p] = {};
-		o = o[p];
-	}
-	o[parts[parts.length-1]] = src;
-}";
-		newline ctx;
-	end;
 	if ctx.js_modern then begin
-		print ctx "})()";
+		print ctx "})(";
+		if (anyExposed && not (Common.defined com Define.ShallowExpose)) then (
+			(* TODO(bruno): Remove runtime branching when standard node haxelib is available *)
+			print ctx "typeof window != \"undefined\" ? window : exports"
+		);
+		print ctx ")";
 		newline ctx;
+		if (anyExposed && (Common.defined com Define.ShallowExpose)) then (
+			List.iter (fun f ->
+				print ctx "var %s = $hx_exports.%s" f.os_name f.os_name;
+				ctx.separator <- true;
+				newline ctx
+			) exposedObject.os_fields;
+			List.iter (fun f ->
+				print ctx "var %s = $hx_exports.%s" f f;
+				ctx.separator <- true;
+				newline ctx
+			) !toplevelExposed
+		);
 	end;
 	if com.debug then write_mappings ctx else (try Sys.remove (com.file ^ ".map") with _ -> ());
 	let ch = open_out_bin com.file in

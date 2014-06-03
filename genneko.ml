@@ -270,9 +270,9 @@ and gen_expr ctx e =
 		call p (field p (gen_type_path p c.cl_path) "new") (List.map (gen_expr ctx) params)
 	| TUnop (op,flag,e) ->
 		gen_unop ctx p op flag e
-	| TVars vl ->
-		(EVars (List.map (fun (v,e) ->
-			let e = (match e with
+	| TVar (v,eo) ->
+		(EVars (
+			let e = (match eo with
 				| None ->
 					if v.v_capture then
 						Some (call p (builtin p "array") [null p])
@@ -285,8 +285,8 @@ and gen_expr ctx e =
 					else
 						Some e
 			) in
-			v.v_name , e
-		) vl),p)
+			[v.v_name, e]
+		),p)
 	| TFunction f ->
 		let inits = List.fold_left (fun acc (a,c) ->
 			let acc = if a.v_capture then
@@ -706,7 +706,7 @@ let gen_name ctx acc t =
 		in
 		setname :: setconstrs :: meta @ acc
 	| TClassDecl c ->
-		if c.cl_extern then
+		if c.cl_extern || (match c.cl_kind with KTypeParameter _ -> true | _ -> false) then
 			acc
 		else
 			let p = pos ctx c.cl_pos in
@@ -848,12 +848,14 @@ let generate com =
 	let use_nekoc = Common.defined com Define.UseNekoc in
 	if not use_nekoc then begin
 		try
+			mkdir_from_path com.file;
 			let ch = IO.output_channel (open_out_bin com.file) in
 			Nbytecode.write ch (Ncompile.compile ctx.version e);
 			IO.close_out ch;
 		with Ncompile.Error (msg,pos) ->
+			let pfile = Common.find_file com pos.psource in
 			let rec loop p =
-				let pp = { pfile = pos.psource; pmin = p; pmax = p; } in
+				let pp = { pfile = pfile; pmin = p; pmax = p; } in
 				if Lexer.get_error_line pp >= pos.pline then
 					pp
 				else

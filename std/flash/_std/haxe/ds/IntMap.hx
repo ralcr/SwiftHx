@@ -29,20 +29,20 @@ package haxe.ds;
 		h = new flash.utils.Dictionary();
 	}
 
-	public function set( key : Int, value : T ) : Void {
+	public inline function set( key : Int, value : T ) : Void {
 		untyped h[key] = value;
 	}
 
-	public function get( key : Int ) : Null<T> {
+	public inline function get( key : Int ) : Null<T> {
 		return untyped h[key];
 	}
 
-	public function exists( key : Int ) : Bool {
-		return untyped h.hasOwnProperty(key);
+	public inline function exists( key : Int ) : Bool {
+		return untyped __in__(key,h);
 	}
 
 	public function remove( key : Int ) : Bool {
-		if( untyped !h.hasOwnProperty(key) ) return false;
+		if( !exists(key) ) return false;
 		untyped __delete__(h,key);
 		return true;
 	}

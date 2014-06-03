@@ -39,6 +39,9 @@ class BytesOutput extends Output {
 		#else
 		b = new BytesBuffer();
 		#end
+		#if python
+		bigEndian = false;
+		#end
 	}
 
 	inline function get_length() : Int {
@@ -101,12 +104,7 @@ class BytesOutput extends Output {
 	}
 
 	override function prepare( size : Int ) {
-		if( size > 0 )
-	#if cpp
-			untyped b.__Resize(size);
-	#else
-			b[size-1] = b[size-1];
-	#end
+		if( size > 0 ) b[size-1] = b[size-1];
 	}
 
 	override function writeString( s : String ) {

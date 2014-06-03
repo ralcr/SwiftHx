@@ -32,12 +32,13 @@ class StringBuf {
 
 	function get_length() : Int {
 		var len = 0;
-		for(s in b) len += s.length;
+		for(s in b)
+			len += s==null ? 4 : s.length;
 		return len;
 	}
 
-	public function add( x : Dynamic ) : Void {
-		b.push(x);
+	public function add<T>( x : T ) : Void {
+		b.push(Std.string(x));
 	}
 
 	public inline function addSub( s : String, pos : Int, ?len : Int ) : Void {

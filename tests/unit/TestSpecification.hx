@@ -35,11 +35,11 @@ typedef T = {
 		prop = "prop";
 		propAcc = "0";
 	}
-	
+
 	public function get_propAcc() {
 		return "1";
 	}
-	
+
 	public function set_propAcc(v) {
 		return this.propAcc = v.toUpperCase();
 	}
@@ -119,6 +119,7 @@ enum EVMTest {
 	EVMC(s:String, ?i:Int);
 	EVMD(n:EVMTest);
 	EVME(?n:EVMTest);
+	EVMF(a:Array<EVMTest>);
 }
 
 #if (!macro && !objc)

@@ -28,27 +28,19 @@
 
 /**
 	The standard Float type, this is a double-precision IEEE 64bit float.
-	
+
 	On static targets, null cannot be assigned to Float. If this is necessary,
-	`Null<Float>` can be used instead.	
+	`Null<Float>` can be used instead.
 **/
 @:coreType @:notNull @:runtimeValue abstract Float { }
 
 /**
 	The standard Int type. Its precision depends on the platform.
-	
+
 	On static targets, null cannot be assigned to Int. If this is necessary,
 	`Null<Int>` can be used instead.
 **/
 @:coreType @:notNull @:runtimeValue abstract Int to Float { }
-
-#if (flash9 || flash9doc || cs)
-/**
-	The unsigned Int type is only defined for Flash9. It's currently
-	handled the same as a normal Int.
-**/
-@:coreType @:notNull @:runtimeValue abstract UInt to Int from Int { }
-#end
 
 #if (java || cs)
 @:coreType @:notNull @:runtimeValue abstract Single to Float from Float {}
@@ -64,7 +56,7 @@ typedef Null<T> = T
 
 /**
 	The standard Boolean type, which can either be true or false.
-	
+
 	On static targets, null cannot be assigned to Bool. If this is necessary,
 	`Null<Bool>` can be used instead.
 **/
@@ -73,7 +65,7 @@ typedef Null<T> = T
 
 /**
 	Dynamic is a special type which is compatible with all other types.
-	
+
 	Use of Dynamic should be minimized as it prevents several compiler
 	checks and optimizations.
 **/
@@ -88,25 +80,25 @@ typedef Null<T> = T
 	custom iterators.
 **/
 typedef Iterator<T> = {
-	
+
 	/**
 		Returns false if the iteration is complete, true otherwise.
-		
+
 		Usually iteration is considered to be complete if all elements of the
 		underlying data structure were handled through calls to next(). However,
 		in custom iterators any logic may be used to determine the completion
 		state.
 	**/
 	function hasNext() : Bool;
-	
+
 	/**
 		Returns the current item of the Iterator and advances to the next one.
-		
+
 		This method is not required to check hasNext() first. A call to this
 		method while hasNext() is false yields unspecified behavior.
 	**/
 	function next() : T;
-	
+
 }
 
 /**

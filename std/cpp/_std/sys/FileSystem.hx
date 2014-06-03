@@ -31,7 +31,7 @@ private enum FileKind {
 class FileSystem {
 
 	public static inline function exists( path : String ) : Bool {
-		return sys_exists(path);
+		return sys_exists(haxe.io.Path.removeTrailingSlashes(path));
 	}
 
 	public static function rename( path : String, newPath : String ) : Void {
@@ -54,7 +54,7 @@ class FileSystem {
 	}
 
 	static function kind( path : String ) : FileKind {
-		var k:String = sys_file_type(path);
+		var k:String = sys_file_type(haxe.io.Path.removeTrailingSlashes(path));
 		return switch(k) {
 		case "file": kfile;
 		case "dir": kdir;
@@ -68,8 +68,12 @@ class FileSystem {
 
 	public static function createDirectory( path : String ) : Void {
 		var path = haxe.io.Path.addTrailingSlash(path);
-		var parts = [while ((path = haxe.io.Path.directory(path)) != "") path];
-		parts.reverse();
+		var _p = null;
+		var parts = [];
+		while (path != (_p = haxe.io.Path.directory(path))) {
+			parts.unshift(path);
+			path = _p;
+		}
 		for (part in parts) {
 			if (part.charCodeAt(part.length - 1) != ":".code && !exists(part) && sys_create_dir( part, 493 )==null)
 				throw "Could not create directory:" + part;

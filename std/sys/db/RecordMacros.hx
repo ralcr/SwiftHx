@@ -439,8 +439,8 @@ class RecordMacros {
 			case CIdent(n):
 				switch( n ) {
 				case "null": return { expr : EConst(CString("NULL")), pos : v.pos };
-				case "true": return { expr : EConst(CInt("1")), pos : v.pos };
-				case "false": return { expr : EConst(CInt("0")), pos : v.pos };
+				case "true": return { expr : EConst(CInt("TRUE")), pos : v.pos };
+				case "false": return { expr : EConst(CInt("FALSE")), pos : v.pos };
 				}
 			default:
 			}
@@ -756,9 +756,9 @@ class RecordMacros {
 				case "null":
 					return { sql : makeString("NULL", p), t : DNull, n : true };
 				case "true":
-					return { sql : makeString("1", p), t : DBool, n : false };
+					return { sql : makeString("TRUE", p), t : DBool, n : false };
 				case "false":
-					return { sql : makeString("0", p), t : DBool, n : false };
+					return { sql : makeString("FALSE", p), t : DBool, n : false };
 				}
 				return buildDefault(cond);
 			}
@@ -1109,11 +1109,19 @@ class RecordMacros {
 		var pos = Context.currentPos();
 		var inst = getManagerInfos(Context.typeof(em),pos);
 		econd = inst.checkKeys(econd);
+		elock = defaultTrue(elock);
 		switch( econd.expr ) {
 		case EObjectDecl(_):
 			return { expr : ECall({ expr : EField(em,"unsafeGetWithKeys"), pos : pos },[econd,elock]), pos : pos };
 		default:
 			return { expr : ECall({ expr : EField(em,"unsafeGet"), pos : pos },[econd,elock]), pos : pos };
+		}
+	}
+
+	static function defaultTrue( e : Expr ) {
+		return switch( e.expr ) {
+		case EConst(CIdent("null")): { expr : EConst(CIdent("true")), pos : e.pos };
+		default: e;
 		}
 	}
 
@@ -1130,7 +1138,7 @@ class RecordMacros {
 		}
 		var sql = buildSQL(em, econd, "SELECT * FROM", eopt);
 		var pos = Context.currentPos();
-		var e = { expr : ECall( { expr : EField(em, "unsafeObjects"), pos : pos }, [sql,elock]), pos : pos };
+		var e = { expr : ECall( { expr : EField(em, "unsafeObjects"), pos : pos }, [sql,defaultTrue(elock)]), pos : pos };
 		if( single )
 			e = { expr : ECall( { expr : EField(e, "first"), pos : pos }, []), pos : pos };
 		return e;

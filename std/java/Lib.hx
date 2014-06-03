@@ -35,19 +35,18 @@ package java;
 
 		If equalLengthRequired is true, the result might be a copy of an array with the correct size.
 	**/
-	public static function nativeArray<T>(arr:Array<T>, equalLengthRequired:Bool):NativeArray<T>
+	@:generic public static function nativeArray<T>(arr:Array<T>, equalLengthRequired:Bool):NativeArray<T>
 	{
-		var native:NativeArray<T> = untyped arr.__a;
-		if (native.length == arr.length)
+		var ret = new NativeArray(arr.length);
+		for (i in 0...arr.length)
 		{
-			return native;
-		} else {
-			return null;
+			ret[i] = arr[i];
 		}
+		return ret;
 	}
 
 	/**
-		Gets the native System.Type from the supplied object. Will throw an exception in case of null being passed.
+		Gets the native java.lang.Class from the supplied object. Will throw an exception in case of null being passed.
 	**/
 	@:functionCode('
 		return (java.lang.Class<T>) obj.getClass();
@@ -55,6 +54,21 @@ package java;
 	public static function nativeType<T>(obj:T):java.lang.Class<T>
 	{
 		return null;
+	}
+	/**
+		Returns a Class<> equivalent to the native java.lang.Class type.
+	**/
+	public static inline function fromNativeType<T>(t:java.lang.Class<T>):Class<T>
+	{
+		return untyped t;
+	}
+
+	/**
+		Returns a java.lang.Class equivalent to the Haxe Class<> type.
+	**/
+	public static inline function toNativeType<T>(cl:Class<T>):java.lang.Class<T>
+	{
+		return untyped cl;
 	}
 
 	/**
@@ -83,7 +97,7 @@ package java;
 
 		This method only exists at compile-time, so it can't be called via reflection.
 	**/
-	@:extern public static inline function lock(obj:Dynamic, block:Dynamic):Void
+	@:extern public static inline function lock<T>(obj:Dynamic, block:T):Void
 	{
 		untyped __lock__(obj, block);
 	}
