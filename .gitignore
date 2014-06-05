@@ -65,3 +65,5 @@ tests/unit/unit.py.res1.txt
 tests/unit/unit.py.res2.bin
 *.cmo
 tests/sys/bin/
+
+README.md
