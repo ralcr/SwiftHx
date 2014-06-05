@@ -955,7 +955,7 @@ try
 		Not_found ->
 			if Sys.os_type = "Unix" then
 				com.class_path <- ["/Users/Cristi/Documents/haxecompiler/haxe/std/";"";"/"]
-				(*com.class_path <- ["/usr/lib/haxe/std/";"/usr/local/lib/haxe/std/";"/usr/lib/haxe/extraLibs/";"/usr/local/lib/haxe/extraLibs/";""]*)
+				(* com.class_path <- ["/usr/lib/haxe/std/";"/usr/local/lib/haxe/std/";"/usr/lib/haxe/extraLibs/";"/usr/local/lib/haxe/extraLibs/";""] *)
 			else
 				let base_path = normalize_path (get_real_path (try executable_path() with _ -> "./")) in
 				com.class_path <- [base_path ^ "std/";base_path ^ "extraLibs/";""]);
@@ -1008,7 +1008,7 @@ try
 		("-swift",Arg.String (fun dir ->
 			cp_libs := "hxcocoa" :: !cp_libs;
 			set_platform Swift dir;
-		),"<directory> : generate Objective-C code into target directory");
+		),"<directory> : generate Swift code into target directory");
 		("-python",Arg.String (fun dir ->
 			set_platform Python dir;
 		),"<file> : generate Python code as target file");
@@ -1522,7 +1522,7 @@ try
 			Common.log com ("Generating Java in : " ^ com.file);
 			Genjava.generate com;
 		| Swift ->
-			Common.log com ("Generating Objective-C in : " ^ com.file);
+			Common.log com ("Generating Swift in : " ^ com.file);
 			Genswift.generate com;
 		| Python ->
 			Common.log com ("Generating python in : " ^ com.file);

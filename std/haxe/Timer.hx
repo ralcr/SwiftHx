@@ -41,15 +41,14 @@ package haxe;
 	the child class.
 **/
 class Timer {
-	#if (flash || js || java || python)
+	#if (flash || js || java || python || swift)
 
 	#if (flash || js)
 		private var id : Null<Int>;
 	#elseif java
 		private var timer : java.util.Timer;
 		private var task : java.util.TimerTask;
-	#end
-	#if swift
+	#elseif swift
 		var nstimer :NSTimer;
 	#end
 
