@@ -6,16 +6,16 @@ echo "Build CocoaTouch demos..."
 echo " "
 
 cd ../hxcocoa/demos/Hello
-# ./../../../haxe/haxe compile.hxml
-
-cd ../Busses
-# ./../../../haxe/haxe compile.hxml
-
-cd ../PiratePig
-# ./../../../haxe/haxe compile.hxml
-
-cd ../WWX
 ./../../../haxe/haxe compile.hxml
+
+# cd ../Busses
+# ./../../../haxe/haxe compile.hxml
+
+# cd ../PiratePig
+# ./../../../haxe/haxe compile.hxml
+
+# cd ../WWX
+# ./../../../haxe/haxe compile.hxml
 
 echo " "
 echo "Build the playground..."
@@ -36,4 +36,4 @@ echo "Build utests..."
 echo " "
 
 cd ..
-# ./haxe/haxe -cp haxe/tests -objc utests -main unit.Test -dce no -D haxeJSON --times
+# ./haxe/haxe -cp haxe/tests -swift utests -main unit.Test -dce no -D haxeJSON --times

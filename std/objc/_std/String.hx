@@ -98,7 +98,7 @@
 	**/
 	public function indexOf( str : String, ?startIndex : Int ) : Int {
 		startIndex = ( startIndex == null ) ? 0 : startIndex;
-		untyped __objc__("NSRange range = [self rangeOfString:str options:NSLiteralSearch range:NSMakeRange(startIndex,self.length-startIndex)];
+		untyped __swift__("NSRange range = [self rangeOfString:str options:NSLiteralSearch range:NSMakeRange(startIndex,self.length-startIndex)];
 	if ( range.location != NSNotFound ) {
 		return range.location;
 	}");
@@ -118,7 +118,7 @@
 	**/
 	public function lastIndexOf( str : String, ?startIndex : Int ) : Int {
 		startIndex = ( startIndex == null ) ? 0 : startIndex;
-		untyped __objc__("NSRange range = [self rangeOfString:str options:NSBackwardsSearch range:NSMakeRange(startIndex,self.length-startIndex)];
+		untyped __swift__("NSRange range = [self rangeOfString:str options:NSBackwardsSearch range:NSMakeRange(startIndex,self.length-startIndex)];
 	if ( range.location != NSNotFound ) {
 		return range.location;
 	}");
@@ -182,8 +182,8 @@
 
 		if( pos < 0 || len <= 0 ) return "";
 		
-		return untyped __objc__("[self substringFromIndex:pos]");
-		//return untyped __objc__("[self substringWithRange:NSMakeRange(pos,len)]");
+		return untyped __swift__("[self substringFromIndex:pos]");
+		//return untyped __swift__("[self substringWithRange:NSMakeRange(pos,len)]");
 	}
 
 	/**
@@ -233,6 +233,6 @@
 		unspecified.
 	**/	
 	static public function fromCharCode( code : Int ) : String {
-		return untyped __objc__("[NSMutableString stringWithFormat:@\"%C\", code]");
+		return untyped __swift__("[NSMutableString stringWithFormat:@\"%C\", code]");
 	}
 }

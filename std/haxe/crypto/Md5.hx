@@ -24,7 +24,7 @@ package haxe.crypto;
 /**
 	Creates a MD5 of a String.
 **/
-#if objc
+#if swift
 @:include("CommonCrypto/CommonDigest.h")
 @:include("CommonCrypto/CommonCryptor.h")
 #end
@@ -35,8 +35,8 @@ class Md5 {
 			return untyped new String(base_encode(make_md5(s.__s),"0123456789abcdef".__s));
 		#elseif php
 			return untyped __call__("md5", s);
-		#elseif objc
-			untyped __objc__("const char *cStr = [input UTF8String];
+		#elseif swift
+			untyped __swift__("const char *cStr = [input UTF8String];
 	unsigned char digest[16];
 	CC_MD5( cStr, strlen(cStr), digest ); // This is the md5 call
 	NSMutableString *output = [NSMutableString stringWithCapacity:CC_MD5_DIGEST_LENGTH * 2];

@@ -21,7 +21,7 @@
  */
 package haxe.crypto;
 
-#if objc
+#if swift
 @:include("CommonCrypto/CommonDigest.h")
 @:include("CommonCrypto/CommonCryptor.h")
 #end
@@ -30,8 +30,8 @@ class Sha1 {
 	public static function encode( s:String ) : String {
 		#if php
 		return untyped __call__("sha1", s);
-		#elseif objc
-			untyped __objc__("const char *cstr = [input cStringUsingEncoding:NSUTF8StringEncoding];
+		#elseif swift
+			untyped __swift__("const char *cstr = [input cStringUsingEncoding:NSUTF8StringEncoding];
 	NSData *data = [NSData dataWithBytes:cstr length:input.length];
 	uint8_t digest[CC_SHA1_DIGEST_LENGTH];
 	CC_SHA1(data.bytes, data.length, digest);

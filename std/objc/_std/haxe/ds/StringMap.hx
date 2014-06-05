@@ -21,7 +21,7 @@
  */
 package haxe.ds;
 
-import objc.foundation.NSDictionary;
+import swift.foundation.NSDictionary;
 	
 @:framework("Foundation")
 @:category("NSMutableDictionary")
@@ -34,7 +34,7 @@ class StringMap<T> implements Map.IMap<String,T> {
 
 	public function set( key : String, value : T ) : Void {
 		//untyped this.setObject (value, key);
-		untyped __objc__("[self setObject:value forKey:key]");
+		untyped __swift__("[self setObject:value forKey:key]");
 	}
 
 	public function get( key : String ) : Null<T> {

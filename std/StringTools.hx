@@ -26,8 +26,8 @@
 	If the first argument to any of the methods is null, the result is
 	unspecified.
 **/
-#if objc
-import objc.foundation.NSCharacterSet;	
+#if swift
+import swift.foundation.NSCharacterSet;
 #end
 #if cs
 @:keep
@@ -55,8 +55,8 @@ class StringTools {
 			return untyped cs.system.Uri.EscapeUriString(s);
 		#elseif python
 			return python.lib.urllib.Parse.quote(s);
-		#elseif objc
-			return untyped __objc__("[s stringByAddingPercentEscapesUsingEncoding:NSASCIIStringEncoding]");
+		#elseif swift
+			return untyped __swift__("[s stringByAddingPercentEscapesUsingEncoding:NSASCIIStringEncoding]");
 		#else
 			return null;
 		#end
@@ -84,8 +84,8 @@ class StringTools {
 			return untyped cs.system.Uri.UnescapeDataString(s);
 		#elseif python
 			return python.lib.urllib.Parse.unquote(s);
-		#elseif objc
-			return untyped __objc__("[s stringByReplacingPercentEscapesUsingEncoding:NSUTF8StringEncoding]");
+		#elseif swift
+			return untyped __swift__("[s stringByReplacingPercentEscapesUsingEncoding:NSUTF8StringEncoding]");
 		#else
 			return null;
 		#end
@@ -140,7 +140,7 @@ class StringTools {
 		return untyped s.startsWith(start);
 		#elseif cs
 		return untyped s.StartsWith(start);
-		#elseif objc
+		#elseif swift
 		return untyped s.hasPrefix(start);
 		#else
 		return( s.length >= start.length && s.substr(0, start.length) == start );
@@ -159,7 +159,7 @@ class StringTools {
 		return untyped s.endsWith(end);
 		#elseif cs
 		return untyped s.EndsWith(end);
-		#elseif objc
+		#elseif swift
 		return untyped s.hasSuffix(end);
 		#else
 		var elen = end.length;
@@ -246,7 +246,7 @@ class StringTools {
 		return untyped s.Trim();
 		#elseif java
 		return untyped s.trim();
-		#elseif objc
+		#elseif swift
 		return untyped s.stringByTrimmingCharactersInSet ( NSCharacterSet.whitespaceCharacterSet());
 		#else
 		return ltrim(rtrim(s));
@@ -319,8 +319,8 @@ class StringTools {
 			return s.split(sub).join(by);
 		else
 			return untyped s.Replace(sub, by);
-		#elseif objc
-			return untyped __objc__("[s replaceOccurrencesOfString:sub withString:by options:nil range:nil]");
+		#elseif swift
+			return untyped __swift__("[s replaceOccurrencesOfString:sub withString:by options:nil range:nil]");
 		#else
 		return s.split(sub).join(by);
 		#end
@@ -391,7 +391,7 @@ class StringTools {
 		return (untyped s).charCodeAt(index);
 		#elseif python
 		return if (index >= s.length) -1 else python.lib.Builtin.ord(python.Syntax.arrayAccess(s, index));
-		#elseif objc
+		#elseif swift
 		return untyped s.characterAtIndex(index);
 		#else
 		return untyped s.cca(index);

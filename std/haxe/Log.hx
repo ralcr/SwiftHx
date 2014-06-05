@@ -94,8 +94,8 @@ class Log {
 			#elseif java
 			untyped __java__("java.lang.System.out.println(str)");
 			#end
-		#elseif objc
-			untyped __objc__ ("printf(\"%s:%s: %s\\n\",
+		#elseif swift
+			untyped __swift__ ("printf(\"%s:%s: %s\\n\",
 		   [[infos objectForKey:@\"fileName\"] cStringUsingEncoding:NSStringEncodingConversionAllowLossy],
 		   [[infos objectForKey:@\"lineNumber\"] cStringUsingEncoding:NSStringEncodingConversionAllowLossy],
 		   [[v description] cStringUsingEncoding:NSStringEncodingConversionAllowLossy])");

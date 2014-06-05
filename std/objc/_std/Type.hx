@@ -35,7 +35,7 @@ enum ValueType {
 	TUnknown;
 }
 
-@:include("objc/runtime.h")
+@:include("swift/runtime.h")
 @:coreApi
 class Type {
 	public static function getClass<T>( o : T ) : Class<T> untyped {
@@ -57,13 +57,13 @@ class Type {
 	public static function getSuperClass( c : Class<Dynamic> ) : Class<Dynamic> {
 		if( c == null )
 			return null;
-		return untyped c.superclass();//__objc__("class_getSuperclass(c);");
+		return untyped c.superclass();//__swift__("class_getSuperclass(c);");
 	}
 
 	public static function getClassName( c : Class<Dynamic> ) : String {
 		if( c == null )
 			return null;
-		return untyped __objc__("NSStringFromClass([c class])");
+		return untyped __swift__("NSStringFromClass([c class])");
 	}
 
 	public static function getEnumName( e : Enum<Dynamic> ) : String {
@@ -71,7 +71,7 @@ class Type {
 	}
 
 	public static function resolveClass( name : String ) : Class<Dynamic> {
-		var result:Class<Dynamic> = untyped __objc__("NSClassFromString ( name )");
+		var result:Class<Dynamic> = untyped __swift__("NSClassFromString ( name )");
 /*		if (result!=null && result.__IsEnum() )
 			return null;*/
 		return result;
@@ -86,12 +86,12 @@ class Type {
 
 	public static function createInstance<T>( cl : Class<T>, args : Array<Dynamic> ) : T {
 		if (cl!=null)
-			return untyped __objc__("[[cl alloc] initFromArray:args]");
+			return untyped __swift__("[[cl alloc] initFromArray:args]");
 		return null;
 	}
 
 	public static function createEmptyInstance<T>( cl : Class<T> ) : T {
-		return untyped __objc__("[cl alloc]");
+		return untyped __swift__("[cl alloc]");
 	}
 
 	public static function createEnum<T>( e : Enum<T>, constr : String, ?params : Array<Dynamic> ) : T {

@@ -23,24 +23,24 @@
  * DAMAGE.
  */
 
-package objc;
+package swift;
 
-import objc.location.CLLocation;
+import swift.location.CLLocation;
 
 
 class Lib {
 	
 	public static function log (v : Dynamic) : Void {
-		untyped __objc__("NSLog (@\"%@\", v)");
+		untyped __swift__("NSLog (@\"%@\", v)");
 	}
 	
 	public static function print (v : Dynamic) : Void {
-		untyped __objc__ ("printf ( [[v description] cStringUsingEncoding:NSStringEncodingConversionAllowLossy] )");
+		untyped __swift__ ("printf ( [[v description] cStringUsingEncoding:NSStringEncodingConversionAllowLossy] )");
 	}
 	
 	public static function println (v : Dynamic) : Void {
 		Lib.print ( v );
-		untyped __objc__ ("printf ( \"\\n\" )");
+		untyped __swift__ ("printf ( \"\\n\" )");
 	}
 	
 	public static function thread (func : Dynamic) : Void {
@@ -48,7 +48,7 @@ class Lib {
 	}
 	
 /*	public static function getURL (url :String, ?target : String) : Bool {
-		return untyped __objc__ ("[[UIApplication sharedApplication] openURL:[NSURL URLWithString:url]]");
+		return untyped __swift__ ("[[UIApplication sharedApplication] openURL:[NSURL URLWithString:url]]");
 	}*/
 	
 	public static function location () :CLLocation {

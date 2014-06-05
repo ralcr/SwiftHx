@@ -49,7 +49,7 @@ RELDIR=../../..
 
 MODULES=ast type lexer common genxml parser typecore optimizer typeload \
 	codegen gencommon genas3 gencpp genjs genneko genphp genswf8 \
-	genswf9 genswf genjava gencs genobjc genpy interp dce filters typer matcher version main
+	genswf9 genswf genjava gencs genswift genpy interp dce filters typer matcher version main
 
 ADD_REVISION=0
 
@@ -128,10 +128,6 @@ genas3.$(MODULE_EXT): type.$(MODULE_EXT) common.$(MODULE_EXT) codegen.$(MODULE_E
 
 gencommon.$(MODULE_EXT): type.$(MODULE_EXT) common.$(MODULE_EXT) codegen.$(MODULE_EXT) ast.$(MODULE_EXT)
 
-# genobjc.cmx: type.cmx lexer.cmx common.cmx codegen.cmx ast.cmx
-# 
-# gencs.cmx: type.cmx lexer.cmx gencommon.cmx common.cmx codegen.cmx ast.cmx
-
 gencpp.$(MODULE_EXT): type.$(MODULE_EXT) lexer.$(MODULE_EXT) common.$(MODULE_EXT) codegen.$(MODULE_EXT) ast.$(MODULE_EXT)
 
 gencs.$(MODULE_EXT): type.$(MODULE_EXT) lexer.$(MODULE_EXT) gencommon.$(MODULE_EXT) common.$(MODULE_EXT) codegen.$(MODULE_EXT) ast.$(MODULE_EXT)
@@ -145,6 +141,8 @@ genneko.$(MODULE_EXT): type.$(MODULE_EXT) lexer.$(MODULE_EXT) common.$(MODULE_EX
 genphp.$(MODULE_EXT): type.$(MODULE_EXT) lexer.$(MODULE_EXT) common.$(MODULE_EXT) codegen.$(MODULE_EXT) ast.$(MODULE_EXT)
 
 genpy.$(MODULE_EXT): type.$(MODULE_EXT) lexer.$(MODULE_EXT) common.$(MODULE_EXT) codegen.$(MODULE_EXT) ast.$(MODULE_EXT)
+
+genswift.$(MODULE_EXT): type.$(MODULE_EXT) lexer.$(MODULE_EXT) common.$(MODULE_EXT) codegen.$(MODULE_EXT) ast.$(MODULE_EXT)
 
 genswf.$(MODULE_EXT): type.$(MODULE_EXT) genswf9.$(MODULE_EXT) genswf8.$(MODULE_EXT) common.$(MODULE_EXT) ast.$(MODULE_EXT)
 

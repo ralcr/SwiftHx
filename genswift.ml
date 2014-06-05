@@ -275,8 +275,8 @@ type context = {
 	mutable handle_break : bool;
 	mutable generating_header : bool;
 	mutable generating_var : bool;
-	mutable generating_objc_block : bool;
-	mutable generating_objc_block_asign : bool;
+	mutable generating_swift_block : bool;
+	mutable generating_swift_block_asign : bool;
 	mutable generating_object_declaration : bool;
 	mutable generating_constructor : bool;
 	mutable generating_self_access : bool;
@@ -312,8 +312,8 @@ let newContext common_ctx writer imports_manager file_info = {
 	handle_break = false;
 	generating_header = false;
 	generating_var = false;
-	generating_objc_block = false;
-	generating_objc_block_asign = false;
+	generating_swift_block = false;
+	generating_swift_block_asign = false;
 	generating_object_declaration = false;
 	generating_constructor = false;
 	generating_self_access = false;
@@ -775,7 +775,7 @@ let defaultValue s =
 	| _ -> "nil"
 ;;
 
-(* A function header in objc is a message *)
+(* A function header in swift is a message *)
 (* We need to follow some strict rules *)
 let generateFunctionHeader ctx name (meta:metadata) (f:tfunc) params pos is_static kind =
 	(* ctx.writer#write ("gen-func-"); *)
@@ -789,7 +789,7 @@ let generateFunctionHeader ctx name (meta:metadata) (f:tfunc) params pos is_stat
 	let sel_list = if (String.length sel > 0) then Str.split_delim (Str.regexp ":") sel else [] in
 	let sel_arr = Array.of_list sel_list in
 	let return_type = if ctx.generating_constructor then "id" else typeToString ctx f.tf_type pos in
-	(* This part generates the name of the function, the first part of the objc message *)
+	(* This part generates the name of the function, the first part of the swift message *)
 	let func_name = if Array.length sel_arr > 1 then sel_arr.(0) else begin
 		(match name with None -> "" | Some (n,meta) ->
 		let rec loop = function
@@ -1403,7 +1403,7 @@ and generateExpression ctx e =
 			end
 		| FClosure (_,fa2) -> (* ctx.writer#write "-FClosure-"; *)
 			
-			(* Generated when we redefine a property. We ned to generate a block with a call to the objc method *)
+			(* Generated when we redefine a property. We ned to generate a block with a call to the swift method *)
 			if Meta.has Meta.Selector fa2.cf_meta then 
 				ctx.writer#write (getFirstMetaValue Meta.Selector fa2.cf_meta)
 			else if ctx.generating_selector then begin
@@ -1529,7 +1529,7 @@ and generateExpression ctx e =
 		ctx.writer#write "continue"
 	| TBlock expr_list ->
 		(* If we generate a dynamic method do not open the block because it was opened already *)
-		if not ctx.generating_objc_block then begin
+		if not ctx.generating_swift_block then begin
 			ctx.writer#begin_block;
 			ctx.writer#new_line;
 		end;
@@ -1578,40 +1578,40 @@ and generateExpression ctx e =
 		ctx.writer#end_block;
 	| TFunction f ->
 		if ctx.generating_var then
-			ctx.generating_objc_block_asign <- true;
+			ctx.generating_swift_block_asign <- true;
 			
-		let semicolon = ctx.generating_objc_block_asign in
+		let semicolon = ctx.generating_swift_block_asign in
 		if ctx.generating_object_declaration then begin
-			ctx.generating_objc_block <- true;
+			ctx.generating_swift_block <- true;
 			let h = generateFunctionHeader ctx None [] f [] e.epos ctx.in_static HeaderBlockInline in
-			ctx.generating_objc_block <- false;
+			ctx.generating_swift_block <- false;
 			generateExpression ctx f.tf_expr;
 			h();
 		end else begin
-			ctx.generating_objc_block <- true;
+			ctx.generating_swift_block <- true;
 			let h = generateFunctionHeader ctx None [] f [] e.epos ctx.in_static HeaderBlockInline in
 			let old = ctx.in_static in
 			ctx.in_static <- true;
-			ctx.generating_objc_block <- false;
+			ctx.generating_swift_block <- false;
 			generateExpression ctx f.tf_expr;
 			ctx.in_static <- old;
 			h();
 		end;
-		(* if ctx.generating_var && ctx.generating_objc_block_asign then ctx.writer#write ";"; *)
+		(* if ctx.generating_var && ctx.generating_swift_block_asign then ctx.writer#write ";"; *)
 		if semicolon then begin
 			(* TODO: Weird fact. We check if the function was a block declaration becuse we need to add ; at the end
 				If we print one ; it appears twice. The second one is not generated from here
 				Quick fix: print nothing *)
 			ctx.writer#write "";
-			ctx.generating_objc_block_asign <- false;
+			ctx.generating_swift_block_asign <- false;
 		end
 	| TCall (func, arg_list) when
 		(match func.eexpr with
-		| TLocal { v_name = "__objc__" } -> true
+		| TLocal { v_name = "__swift__" } -> true
 		| _ -> false) ->
 		( match arg_list with
 		| [{ eexpr = TConst (TString code) }] -> ctx.writer#write code;
-		| _ -> error "__objc__ accepts only one string as an argument" func.epos)
+		| _ -> error "__swift__ accepts only one string as an argument" func.epos)
 	| TCall (func, arg_list) ->
 		(match func.eexpr with
 		| TField (e,fa) ->
@@ -1659,7 +1659,7 @@ and generateExpression ctx e =
 		ctx.writer#write "@throw ";
 		generateValue ctx e;
 		(* ctx.writer#write ";"; *)
-	| TVars [] ->
+	(* | TVars [] ->
 		()
 	| TVars vl ->
 		(* Local vars declaration *)
@@ -1693,20 +1693,20 @@ and generateExpression ctx e =
 				generateValue ctx e
 		) vl;
 		(* if List.length vl == 1 then ctx.writer#write ";"; *)
-		ctx.generating_var <- false;
+		ctx.generating_var <- false; *)
 	| TNew (c,params,el) ->
 		(* | TNew of tclass * tparams * texpr list *)
 		(* ctx.writer#write ("GEN_NEW>"^(snd c.cl_path)^(string_of_int (List.length params))); *)
 		(*remapHaxeTypeToObjc ctx true c.cl_path e.epos) *)
 		(* SPECIAL INSTANCES. Treat them differently *)
 		(match c.cl_path with
-			| (["objc";"graphics"],"CGRect")
-			| (["objc";"graphics"],"CGPoint")
-			| (["objc";"graphics"],"CGSize") ->
+			| (["swift";"graphics"],"CGRect")
+			| (["swift";"graphics"],"CGPoint")
+			| (["swift";"graphics"],"CGSize") ->
 				ctx.writer#write ((snd c.cl_path)^"Make(");
 				concat ctx "," (generateValue ctx) el;
 				ctx.writer#write ")"
-			| (["objc";"foundation"],"NSRange") ->
+			| (["swift";"foundation"],"NSRange") ->
 				ctx.writer#write ("NSMakeRange(");
 				concat ctx "," (generateValue ctx) el;
 				ctx.writer#write ")"
@@ -1840,7 +1840,7 @@ and generateExpression ctx e =
 		ctx.writer#end_block;
 		handleBreak();
 	| TTry (e,catchs) ->
-		(* TODO: objc has only one catch? *)
+		(* TODO: swift has only one catch? *)
 		ctx.writer#write "@try ";
 		generateExpression ctx e;
 		List.iter (fun (v,e) ->
@@ -2008,7 +2008,6 @@ and generateValue ctx e =
 	| TBreak
 	| TContinue ->
 		unsupported e.epos
-	| TVars _
 	| TFor _
 	| TWhile _
 	| TThrow _ ->
@@ -2186,7 +2185,7 @@ let generateMain ctx fd =
 	let platform_class = ref "" in
 	let app_delegate_class = ref "" in
 	(match fd.tf_expr.eexpr with
-		(* \ TBlock [] -> print_endline "objc_error: The main method should have a return" *)
+		(* \ TBlock [] -> print_endline "swift_error: The main method should have a return" *)
 		| TBlock expr_list ->
 			(* Iterate over the expressions in the main block *)
 			List.iter (fun e ->
@@ -2203,13 +2202,13 @@ let generateMain ctx fd =
 									| TTypeExpr t ->
 										let path = t_path t in
 										app_delegate_class := snd path;
-									| _ -> print_endline "objc_error: No AppDelegate found in the return";
+									| _ -> print_endline "swift_error: No AppDelegate found in the return";
 								)) el
 							| _ -> print_endline "No 'new' keyword found")
 					);
-				| _ -> print_endline "objc_error: The main method should have a return: new UIApplicationMain()");
+				| _ -> print_endline "swift_error: The main method should have a return: new UIApplicationMain()");
 			) expr_list
-		| _ -> print_endline "objc_error: The main method should have a return: new UIApplicationMain()"
+		| _ -> print_endline "swift_error: The main method should have a return: new UIApplicationMain()"
 	);
 	(* print_endline ("- app_delegate_class: "^ (!app_delegate_class)); *)
 	let src_dir = srcDir ctx.com in
@@ -2234,7 +2233,7 @@ int main(int argc, char *argv[]) {
 }
 ");
 		m_file#close;
-		| _ -> print_endline "objc_error: Supported returns in the main method are UIApplicationMain or NSApplicationMain"
+		| _ -> print_endline "swift_error: Supported returns in the main method are UIApplicationMain or NSApplicationMain"
 	)
 ;;
 let generateHXObject common_ctx =
@@ -2329,11 +2328,11 @@ let generateField ctx is_static field =
 				ctx.writer#write ";";
 		end
 	| Some { eexpr = TFunction func }, Method (MethDynamic) ->
-		ctx.writer#write "// Dynamic method defined with an objc method and a block property\n";
+		ctx.writer#write "// Dynamic method defined with an swift method and a block property\n";
 		(* Generate function header *)
 		let h = generateFunctionHeader ctx (Some (field.cf_name, field.cf_meta)) field.cf_meta func field.cf_params pos is_static HeaderObjc in
 		h();
-		ctx.generating_objc_block <- true;
+		ctx.generating_swift_block <- true;
 		
 		let func_name = (match (Some (field.cf_name, field.cf_meta)) with None -> "" | Some (n,meta) ->
 			let rec loop = function
@@ -2363,7 +2362,7 @@ let generateField ctx is_static field =
 		end else begin
 			ctx.writer#write (Printf.sprintf "\n@synthesize hx_dyn_%s;\n" func_name);
 		end;
-		ctx.generating_objc_block <- false;
+		ctx.generating_swift_block <- false;
 	| _ ->
 		let is_getset = (match field.cf_kind with Var { v_read = AccCall _ } | Var { v_write = AccCall _ } -> true | _ -> false) in
 		match follow field.cf_type with
@@ -2450,7 +2449,7 @@ let pbxproj common_ctx files_manager =
 	
 	(* Search the SupportingFiles folder *)
 	let supporting_files = ref "" in
-	(match common_ctx.objc_supporting_files with
+	(match common_ctx.swift_supporting_files with
 	| None ->
 		print_endline "No SupportingFiles defined by user, search in hxcocoa lib.";
 		List.iter (fun dir ->
@@ -2515,7 +2514,7 @@ let pbxproj common_ctx files_manager =
 /* End PBXContainerItemProxy section */\n");
 
 	(* Begin PBXFileReference section *)
-	(* {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = Log.m; path = Playground/haxe/Log.m; sourceTree = SOURCE_ROOT; }; *)
+	(* {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.swift; name = Log.m; path = Playground/haxe/Log.m; sourceTree = SOURCE_ROOT; }; *)
 	file#write ("\n\n/* Begin PBXFileReference section */\n");
 	let fileref_en = files_manager#generate_uuid_for_file ([],"fileref_en") in
 	let fileref_en_tests = files_manager#generate_uuid_for_file ([],"fileref_en_tests") in
@@ -2535,7 +2534,7 @@ let pbxproj common_ctx files_manager =
 				file#write ("		"^fileRef^" /* "^name^".framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = "^name^".framework; path = "^(!prefix)^path^"; sourceTree = \"<group>\"; };\n");
 				used := true;
 			end
-		) common_ctx.objc_libs;
+		) common_ctx.swift_libs;
 		if not !used then begin
 			let path = "System/Library/Frameworks/"^name^".framework" in
 			file#write ("		"^fileRef^" /* "^name^".framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = "^name^".framework; path = "^path^"; sourceTree = SDKROOT; };\n");
@@ -2544,7 +2543,7 @@ let pbxproj common_ctx files_manager =
 	
 	List.iter ( fun (uuid, fileRef, path, ext) -> 
 		let full_path = (joinClassPath path "/") in
-		let file_type = (if ext = ".h" then "h" else "objc") in
+		let file_type = (if ext = ".h" then "h" else "swift") in
 		if (fst path = []) then
 			file#write ("		"^fileRef^" /* "^full_path^ext^" */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c."^file_type^"; path = "^full_path^ext^"; sourceTree = \"<group>\"; };\n")
 		else
@@ -2562,11 +2561,11 @@ let pbxproj common_ctx files_manager =
 		let comps = Str.split (Str.regexp "/") common_ctx.file in
 		List.iter (fun p -> prefix := (!prefix) ^ "../") comps;
 		let n = (joinClassPath path "/") in
-		let final_path = (match common_ctx.objc_supporting_files with
+		let final_path = (match common_ctx.swift_supporting_files with
 			| None -> (!supporting_files)^n
 			| Some _ -> (!prefix)^(!supporting_files)^n
 		) in
-		let final_source_tree = (match common_ctx.objc_supporting_files with
+		let final_source_tree = (match common_ctx.swift_supporting_files with
 			| None -> "\"<absolute>\""
 			| Some _ -> "SOURCE_ROOT"
 		) in
@@ -2579,7 +2578,7 @@ let pbxproj common_ctx files_manager =
 	file#write ("		"^fileref_en_tests^" /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/InfoPlist.strings; sourceTree = \"<group>\"; };\n");
 	file#write ("		"^fileref_plist^" /* "^app_name^"-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = \""^app_name^"-Info.plist\"; sourceTree = \"<group>\"; };\n");
 	file#write ("		"^fileref_pch^" /* "^app_name^"-Prefix.pch */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = \""^app_name^"-Prefix.pch\"; sourceTree = \"<group>\"; };\n");
-	file#write ("		"^build_file_main_fileref^" /* main.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = main.m; sourceTree = \"<group>\"; };\n");
+	file#write ("		"^build_file_main_fileref^" /* main.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.swift; path = main.m; sourceTree = \"<group>\"; };\n");
 	file#write ("		"^fileref_app^" /* "^app_name^".app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "^app_name^".app; sourceTree = BUILT_PRODUCTS_DIR; };\n");
 	file#write ("		"^fileref_octest^" /* "^app_name^"Tests.octest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "^app_name^"Tests.octest; sourceTree = BUILT_PRODUCTS_DIR; };\n");
 	file#write ("/* End PBXFileReference section */\n");
@@ -2892,11 +2891,11 @@ let pbxproj common_ctx files_manager =
 	let build_config_list_app_release = files_manager#generate_uuid_for_file ([],"build_config_list_app_release") in
 	let build_config_list_tests_debug = files_manager#generate_uuid_for_file ([],"build_config_list_tests_debug") in
 	let build_config_list_tests_release = files_manager#generate_uuid_for_file ([],"build_config_list_tests_release") in
-	let objc_deployment_target = Printf.sprintf "%.1f" common_ctx.objc_version in
-	let objc_targeted_device_family =
-		if (common_ctx.objc_platform = "ios" || common_ctx.objc_platform = "universal") then "1,2" 
-		else if common_ctx.objc_platform = "iphone" then "1"
-		else if common_ctx.objc_platform = "ipad" then "2" 
+	let swift_deployment_target = Printf.sprintf "%.1f" common_ctx.swift_version in
+	let swift_targeted_device_family =
+		if (common_ctx.swift_platform = "ios" || common_ctx.swift_platform = "universal") then "1,2" 
+		else if common_ctx.swift_platform = "iphone" then "1"
+		else if common_ctx.swift_platform = "ipad" then "2" 
 		else "0" in
 	let prefix = ref "" in
 	let comps = Str.split (Str.regexp "/") common_ctx.file in
@@ -2927,7 +2926,7 @@ let pbxproj common_ctx files_manager =
 				GCC_WARN_ABOUT_RETURN_TYPE = YES;
 				GCC_WARN_UNINITIALIZED_AUTOS = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = " ^ objc_deployment_target ^ ";
+				IPHONEOS_DEPLOYMENT_TARGET = " ^ swift_deployment_target ^ ";
 				ONLY_ACTIVE_ARCH = YES;
 				SDKROOT = iphoneos;
 			};
@@ -2948,7 +2947,7 @@ let pbxproj common_ctx files_manager =
 				GCC_WARN_ABOUT_RETURN_TYPE = YES;
 				GCC_WARN_UNINITIALIZED_AUTOS = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = " ^ objc_deployment_target ^ ";
+				IPHONEOS_DEPLOYMENT_TARGET = " ^ swift_deployment_target ^ ";
 				OTHER_CFLAGS = \"-DNS_BLOCK_ASSERTIONS=1\";
 				SDKROOT = iphoneos;
 				VALIDATE_PRODUCT = YES;
@@ -2965,21 +2964,21 @@ let pbxproj common_ctx files_manager =
 		let comps = Str.split (Str.regexp "/") path in
 		let path2 = String.concat "/" (List.rev (List.tl (List.rev comps))) in
 		file#write ("					\"\\\"$(SRCROOT)/"^(!prefix)^path2^"\\\"\",\n");
-	) common_ctx.objc_libs;
+	) common_ctx.swift_libs;
 	file#write ("				);
 				GCC_PRECOMPILE_PREFIX_HEADER = YES;
 				GCC_PREFIX_HEADER = \""^app_name^"/"^app_name^"-Prefix.pch\";
 				GCC_VERSION = com.apple.compilers.llvm.clang.1_0;
 				INFOPLIST_FILE = \""^app_name^"/"^app_name^"-Info.plist\";
-				IPHONEOS_DEPLOYMENT_TARGET = " ^ objc_deployment_target ^ ";
+				IPHONEOS_DEPLOYMENT_TARGET = " ^ swift_deployment_target ^ ";
 				OTHER_LDFLAGS = (");
 	List.iter (fun v ->
 		file#write ("					\"-"^v^"\",\n");
-	) common_ctx.objc_linker_flags;
+	) common_ctx.swift_linker_flags;
 	file#write ("				);
 				PRODUCT_NAME = \"$(TARGET_NAME)\";
 				PROVISIONING_PROFILE = \"\";
-				TARGETED_DEVICE_FAMILY = \"" ^ objc_targeted_device_family ^ "\";
+				TARGETED_DEVICE_FAMILY = \"" ^ swift_targeted_device_family ^ "\";
 				WRAPPER_EXTENSION = app;
 			};
 			name = Debug;
@@ -2994,20 +2993,20 @@ let pbxproj common_ctx files_manager =
 		let comps = Str.split (Str.regexp "/") path in
 		let path2 = String.concat "/" (List.rev (List.tl (List.rev comps))) in
 		file#write ("					\"\\\"$(SRCROOT)/"^(!prefix)^path2^"\\\"\",\n");
-	) common_ctx.objc_libs;
+	) common_ctx.swift_libs;
 	file#write ("				);
 				GCC_PRECOMPILE_PREFIX_HEADER = YES;
 				GCC_PREFIX_HEADER = \""^app_name^"/"^app_name^"-Prefix.pch\";
 				GCC_VERSION = com.apple.compilers.llvm.clang.1_0;
 				INFOPLIST_FILE = \""^app_name^"/"^app_name^"-Info.plist\";
-				IPHONEOS_DEPLOYMENT_TARGET = " ^ objc_deployment_target ^ ";
+				IPHONEOS_DEPLOYMENT_TARGET = " ^ swift_deployment_target ^ ";
 				OTHER_LDFLAGS = (");
 	List.iter (fun v ->
 		file#write ("					\"-"^v^"\",\n");
-	) common_ctx.objc_linker_flags;
+	) common_ctx.swift_linker_flags;
 	file#write ("				);
 				PRODUCT_NAME = \"$(TARGET_NAME)\";
-				TARGETED_DEVICE_FAMILY = \"" ^ objc_targeted_device_family ^ "\";
+				TARGETED_DEVICE_FAMILY = \"" ^ swift_targeted_device_family ^ "\";
 				WRAPPER_EXTENSION = app;
 			};
 			name = Release;
@@ -3146,7 +3145,7 @@ let generatePlist common_ctx file_info  =
 	
 	(* Search the user defined -Info.plist in the custom SupportingFiles folder *)
 	let app_name = appName common_ctx in
-	let supporting_files = (match common_ctx.objc_supporting_files with
+	let supporting_files = (match common_ctx.swift_supporting_files with
 		| None -> ""
 		| Some p -> p) in
 	let plist_path = if (supporting_files != "") then (supporting_files ^ app_name ^ "-Info.plist") else "" in
@@ -3156,16 +3155,16 @@ let generatePlist common_ctx file_info  =
 		let file_contents = read_file plist_path in
 		file#write file_contents;
 	end else begin
-		let identifier = match common_ctx.objc_identifier with 
+		let identifier = match common_ctx.swift_identifier with 
 			| Some id -> id
-			| None -> "org.haxe.hxobjc" in
-		let bundle_name = match common_ctx.objc_bundle_name with 
+			| None -> "org.haxe.hxswift" in
+		let bundle_name = match common_ctx.swift_bundle_name with 
 			| Some name -> name 
 			| None -> "${PRODUCT_NAME}" in
-		let executable_name = match common_ctx.objc_bundle_name with 
+		let executable_name = match common_ctx.swift_bundle_name with 
 			| Some name -> name 
 			| None -> "${EXECUTABLE_NAME}" in
-		let bundle_version = Printf.sprintf "%.1f" common_ctx.objc_bundle_version in
+		let bundle_version = Printf.sprintf "%.1f" common_ctx.swift_bundle_version in
 		file#write ("<?xml version=\"1.0\" encoding=\"UTF-8\"?>
 	<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">
 	<plist version=\"1.0\">
@@ -3370,7 +3369,7 @@ let generate common_ctx =
 			if not class_def.cl_extern then begin
 				(* let gen = new_ctx common_ctx in
 				init_ctx gen;
-				Hashtbl.add gen.gspecial_vars "__objc__" true; (* add here all special __vars__ you need *)
+				Hashtbl.add gen.gspecial_vars "__swift__" true; (* add here all special __vars__ you need *)
 				ExpressionUnwrap.configure gen (ExpressionUnwrap.traverse gen (fun e -> Some { eexpr = TVars([mk_temp gen "expr" e.etype, Some e]); etype = gen.gcon.basic.tvoid; epos = e.epos }));
 				run_filters gen; *)
 				
@@ -3453,10 +3452,10 @@ let generate common_ctx =
 			()
 	) common_ctx.types;
 	
-	(* List.iter (fun p -> print_endline p ) common_ctx.objc_libs; *)
+	(* List.iter (fun p -> print_endline p ) common_ctx.swift_libs; *)
 	List.iter (fun name ->
 		imports_manager#add_framework name;
-	) common_ctx.objc_frameworks;
+	) common_ctx.swift_frameworks;
 	
 	(* Register some default files that were not added by the compiler *)
 	(* files_manager#register_source_file class_def.cl_path ".m"; *)

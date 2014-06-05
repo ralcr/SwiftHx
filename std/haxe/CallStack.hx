@@ -80,8 +80,8 @@ class CallStack {
 			a.shift(); // remove Stack.callStack()
 			(untyped Error).prepareStackTrace = oldValue;
 			return a;
-		#elseif objc
-			var s:Array<String> = objc.foundation.NSThread.callStackSymbols();
+		#elseif swift
+			var s:Array<String> = swift.foundation.NSThread.callStackSymbols();
 			return makeStack(s);
 		#elseif java
 			var stack = [];
@@ -292,7 +292,7 @@ class CallStack {
 					m.unshift(FilePos( Method(words[0],words[1]),words[2],Std.parseInt(words[3])));
 			}
 			return m;
-		#elseif objc
+		#elseif swift
 			var stack : Array<String> = s;
 			var m = new Array<StackItem>();
 			for(func in stack) {

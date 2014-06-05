@@ -143,7 +143,7 @@ let htmlescape s =
 	s
 
 let reserved_flags = [
-	"cross";"flash8";"js";"neko";"flash";"php";"cpp";"cs";"java";"objc";
+	"cross";"flash8";"js";"neko";"flash";"php";"cpp";"cs";"java";"swift";
 	"as3";"swc";"macro";"sys"
 	]
 
@@ -1005,9 +1005,9 @@ try
 			cp_libs := "hxjava" :: !cp_libs;
 			set_platform Java dir;
 		),"<directory> : generate Java code into target directory");
-		("-objc",Arg.String (fun dir ->
+		("-swift",Arg.String (fun dir ->
 			cp_libs := "hxcocoa" :: !cp_libs;
-			set_platform ObjC dir;
+			set_platform Swift dir;
 		),"<directory> : generate Objective-C code into target directory");
 		("-python",Arg.String (fun dir ->
 			set_platform Python dir;
@@ -1193,43 +1193,43 @@ try
 			com.php_prefix <- Some f;
 			Common.define com Define.PhpPrefix;
 		),"<name> : prefix all classes with given name");
-		(* ObjC related parameters. *)
-		("-objc-platform",Arg.String (fun v ->
-			com.objc_platform <- v;
+		(* Swift related parameters. *)
+		("-swift-platform",Arg.String (fun v ->
+			com.swift_platform <- v;
 		),"<platform> : set the platform. e.g. iphone, ipad, ios, osx, generic");
-		("-objc-version",Arg.Float (fun v ->
-			com.objc_version <- v;
-			(* Common.raw_define com (Printf.sprintf "objc_version=%f.0" v); *)
-			Common.raw_define com "objc_version=5.0";
+		("-swift-version",Arg.Float (fun v ->
+			com.swift_version <- v;
+			(* Common.raw_define com (Printf.sprintf "swift_version=%f.0" v); *)
+			Common.raw_define com "swift_version=5.0";
 		),"<version> : set the cocoa sdk version. e.g. 4-6.1 for iOS, 10.7-10.8 for OSX");
-		("-objc-bundle-version",Arg.Float (fun v ->
-			com.objc_bundle_version <- v;
+		("-swift-bundle-version",Arg.Float (fun v ->
+			com.swift_bundle_version <- v;
 		),"<version> : set the version of the app. e.g. 1.0");
-		("-objc-identifier",Arg.String (fun v ->
-			com.objc_identifier <- Some v;
+		("-swift-identifier",Arg.String (fun v ->
+			com.swift_identifier <- Some v;
 		),"<identifier> : set the identifier for the app. e.g. com.domain.appname");
-		("-objc-owner",Arg.String (fun v ->
-			com.objc_owner <- Some v;
+		("-swift-owner",Arg.String (fun v ->
+			com.swift_owner <- Some v;
 		),"<owner> : set the owner name of the app");
-		("-objc-bundle-name",Arg.String (fun v ->
-			com.objc_bundle_name <- Some v;
+		("-swift-bundle-name",Arg.String (fun v ->
+			com.swift_bundle_name <- Some v;
 		),"<name> : set the name of the executable");
-		("-objc-supporting-files",Arg.String (fun path ->
-			com.objc_supporting_files <- Some (normalize_path path);
+		("-swift-supporting-files",Arg.String (fun path ->
+			com.swift_supporting_files <- Some (normalize_path path);
 		),"<path> : set a custom SupportingFiles folder that contains resources and custom project files.");
-		("-objc-lib",Arg.String (fun path ->
-			com.objc_libs <- path :: com.objc_libs
-		),"<name> : add a linker flag to the app. e.g. ObjC");
-		("-objc-framework",Arg.String (fun name ->
-			com.objc_frameworks <- name :: com.objc_frameworks
-		),"<name> : add a linker flag to the app. e.g. ObjC");
-		("-objc-linker-flag",Arg.String (fun name ->
-			com.objc_linker_flags <- name :: com.objc_linker_flags
+		("-swift-lib",Arg.String (fun path ->
+			com.swift_libs <- path :: com.swift_libs
+		),"<name> : add a linker flag to the app. e.g. Swift");
+		("-swift-framework",Arg.String (fun name ->
+			com.swift_frameworks <- name :: com.swift_frameworks
+		),"<name> : add a linker flag to the app. e.g. Swift");
+		("-swift-linker-flag",Arg.String (fun name ->
+			com.swift_linker_flags <- name :: com.swift_linker_flags
 		),"<path> : add a custom framework");
 		("-ios-orientation",Arg.String (fun v ->
 			com.ios_orientations <- v :: com.ios_orientations
 		),"<orientation> : add iOS orientations. e.g. UIInterfaceOrientationPortrait");
-		(* ObjC ends *)
+		(* Swift ends *)
 		("--remap", Arg.String (fun s ->
 			let pack, target = (try ExtString.String.split s ":" with _ -> raise (Arg.Bad "Invalid remap format, expected source:target")) in
 			com.package_rules <- PMap.add pack (Remap target) com.package_rules;
@@ -1408,19 +1408,19 @@ try
 			);
 			Genjava.before_generate com;
 			add_std "java"; "java"
-		| ObjC ->
+		| Swift ->
 			let rec loop = function
 				| [] -> ()
 				| (v,def) :: l ->
-					if v >= com.objc_version then begin
+					if v >= com.swift_version then begin
 						print_endline ("-> define flag: ios" ^ def);
 						Common.raw_define com ("ios" ^ def);
 					end;
 					loop l
 			in
-			loop Common.objc_ios_versions;
+			loop Common.swift_ios_versions;
 			Common.raw_define com "ios";
-			add_std "objc";
+			add_std "swift";
 			"m"
 		| Python ->
 			add_std "python";
@@ -1521,9 +1521,9 @@ try
 		| Java ->
 			Common.log com ("Generating Java in : " ^ com.file);
 			Genjava.generate com;
-		| ObjC ->
+		| Swift ->
 			Common.log com ("Generating Objective-C in : " ^ com.file);
-			Genobjc.generate com;
+			Genswift.generate com;
 		| Python ->
 			Common.log com ("Generating python in : " ^ com.file);
 			Genpy.generate com;

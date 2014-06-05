@@ -1,7 +1,7 @@
 ![Haxe logo](http://ralcr.com/swift.png)
-# [Hxobjc target](http://haxe.org)
+# [Swift target for Haxe language](http://haxe.org)
 
-This fork contains the Hxobjc target. 
+This fork contains the Swift target. 
 [![Build Status](https://travis-ci.org/HaxeFoundation/haxe.png?branch=development)](https://travis-ci.org/HaxeFoundation/haxe)
 
 Haxe is an open source toolkit that allows you to easily build cross-platform tools and applications that target many mainstream platforms. The Haxe toolkit includes:

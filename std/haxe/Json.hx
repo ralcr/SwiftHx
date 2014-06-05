@@ -26,11 +26,11 @@ package haxe;
 	Use -D haxeJSON to force usage of the haXe implementation even if a native API is found : this will provide
 	extra encoding features such as enums (replaced by their index), Hashs and Iterable.
 **/
-#if ((objc_version>=5) && !haxeJSON)
-	import objc.foundation.NSError;
-	import objc.foundation.NSString;
-	import objc.foundation.NSData;
-	import objc.foundation.NSJSONSerialization;
+#if ((swift_version>=5) && !haxeJSON)
+	import swift.foundation.NSError;
+	import swift.foundation.NSString;
+	import swift.foundation.NSData;
+	import swift.foundation.NSJSONSerialization;
 #end
 
 class Json {

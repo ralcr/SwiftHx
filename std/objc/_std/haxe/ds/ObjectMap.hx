@@ -8,23 +8,23 @@ package haxe.ds;
 
 	public function get( key : K ) : Null<V> {
 		//return untyped this.objectForKey ( key );
-		return untyped __objc__("[self objectForKey:[NSString stringWithFormat:@\"%@\",key]]");
+		return untyped __swift__("[self objectForKey:[NSString stringWithFormat:@\"%@\",key]]");
 	}
 
 	public function set( key : K, value : V ) : Void {
 		//untyped this.setObject (value, key);
-		untyped __objc__("[self setObject:value forKey:[NSString stringWithFormat:@\"%@\",key]]");
+		untyped __swift__("[self setObject:value forKey:[NSString stringWithFormat:@\"%@\",key]]");
 	}
 
 	public function exists( key : K ) : Bool {
 		//return untyped this.objectForKey ( key ) != null;
-		return untyped __objc__("[self objectForKey:[NSString stringWithFormat:@\"%@\",key]] != nil");
+		return untyped __swift__("[self objectForKey:[NSString stringWithFormat:@\"%@\",key]] != nil");
 	}
 
 	public function remove( key : K ) : Bool {
 		//return untyped this.removeObjectForKey ( key );
 		if (exists(key)) {
-			untyped __objc__("[self removeObjectForKey:[NSString stringWithFormat:@\"%@\",key]]");
+			untyped __swift__("[self removeObjectForKey:[NSString stringWithFormat:@\"%@\",key]]");
 			return true;
 		}
 		return false;

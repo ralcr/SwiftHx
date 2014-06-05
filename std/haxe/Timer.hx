@@ -21,9 +21,9 @@
  */
 package haxe;
 
-#if objc
-	import objc.foundation.NSTimer;
-	import objc.foundation.NSRunLoop;
+#if swift
+	import swift.foundation.NSTimer;
+	import swift.foundation.NSRunLoop;
 #end
 
 /**
@@ -49,7 +49,7 @@ class Timer {
 		private var timer : java.util.Timer;
 		private var task : java.util.TimerTask;
 	#end
-	#if objc
+	#if swift
 		var nstimer :NSTimer;
 	#end
 
@@ -74,7 +74,7 @@ class Timer {
 		#elseif js
 			var me = this;
 			id = untyped setInterval(function() me.run(),time_ms);
-		#elseif objc
+		#elseif swift
 			nstimer = NSTimer.timerWithTimeInterval (time_ms*1000, this, new SEL(nsrun), null, true);
 			var runner = NSRunLoop.currentRunLoop();
 			runner.addTimer (nstimer, NSDefaultRunLoopMode);
@@ -108,7 +108,7 @@ class Timer {
 			timer.cancel();
 			timer = null;
 			task = null;
-		#elseif objc
+		#elseif swift
 			nstimer.invalidate();
 			nstimer = null;
 		#end
@@ -128,7 +128,7 @@ class Timer {
 	public dynamic function run() {
 
 	}
-	#if objc
+	#if swift
 	function nsrun(aTimer:NSTimer) {
 		run();
 	}
@@ -189,7 +189,7 @@ class Timer {
 			return untyped __global__.__time_stamp();
 		#elseif sys
 			return Sys.time();
-		#elseif objc
+		#elseif swift
 			return new NSDate().timeIntervalSince1970();
 		#else
 			return 0;
