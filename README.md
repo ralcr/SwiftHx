@@ -1,4 +1,4 @@
-![Haxe logo](http://ralcr.com/Icon-72@2x.png)
+![Haxe logo](http://ralcr.com/swift.png)
 # [Hxobjc target](http://haxe.org)
 
 This fork contains the Hxobjc target. 
