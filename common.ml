@@ -469,7 +469,7 @@ module MetaInfo = struct
 		| Usage -> ":usage",("?",[])
 		| Used -> ":used",("Internally used by DCE to mark a class or field as used",[Internal])
 		| C -> ":c",("Mark a C method in Swift code",[Platform Swift])
-		| Category -> ":category",("Converts a class to an Swift category of another class",[Platform Swift])
+		| Extension -> ":extension",("Converts a class to an Swift extension of another class",[Platform Swift])
 		| GetterBody -> ":getterBody",("Set the code inside a getter method",[UsedOn TClassField;Platform Swift])
 		| Import -> ":import",("Generates an #import statement for a native class",[Platform Swift])
 		| Framework -> ":framework",("Generates an #import for the framework instead the class path",[Platform Swift])

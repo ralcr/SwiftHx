@@ -150,7 +150,7 @@ module Meta = struct
 		| Usage
 		| Used
 		| C
-		| Category
+		| Extension
 		| GetterBody
 		| Import
 		| Framework
