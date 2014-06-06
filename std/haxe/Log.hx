@@ -95,10 +95,7 @@ class Log {
 			untyped __java__("java.lang.System.out.println(str)");
 			#end
 		#elseif swift
-			untyped __swift__ ("printf(\"%s:%s: %s\\n\",
-		   [[infos objectForKey:@\"fileName\"] cStringUsingEncoding:NSStringEncodingConversionAllowLossy],
-		   [[infos objectForKey:@\"lineNumber\"] cStringUsingEncoding:NSStringEncodingConversionAllowLossy],
-		   [[v description] cStringUsingEncoding:NSStringEncodingConversionAllowLossy])");
+			untyped __swift__ ("println(\"\\(infos.fileName):\\(infos.lineNumber): v\")");
 		#elseif (python)
 			var str:String = null;
 			if (infos != null) {
