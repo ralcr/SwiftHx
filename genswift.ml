@@ -186,7 +186,7 @@ class sourceWriter write_func close_func =
 	
 	method begin_block = this#write ("{"); this#push_indent; this#new_line
 	method end_block = this#pop_indent; this#write "}"; just_finished_block <- true
-	method terminate_line = this#write (if just_finished_block then "" else ";"); this#new_line
+	method terminate_line = this#write (if just_finished_block then "" else ""); this#new_line
 	
 	method write_header_import (module_path:path) (class_path:path) = 
 		let steps = ref "" in
@@ -272,7 +272,6 @@ type context = {
 	mutable is_protocol : bool;
 	mutable is_extension : bool;(* In categories @synthesize should be replaced with the getter and setter *)
 	mutable handle_break : bool;
-	mutable generating_header : bool;
 	mutable generating_var : bool;
 	mutable generating_swift_block : bool;
 	mutable generating_swift_block_asign : bool;
@@ -309,7 +308,6 @@ let newContext common_ctx writer imports_manager file_info = {
 	is_protocol = false;
 	is_extension = false;
 	handle_break = false;
-	generating_header = false;
 	generating_var = false;
 	generating_swift_block = false;
 	generating_swift_block_asign = false;
@@ -823,15 +821,14 @@ let generateFunctionHeader ctx name (meta:metadata) (f:tfunc) params pos is_stat
 			concat ctx ", " (fun (v,c) ->
 				let type_name = typeToString ctx v.v_type pos in
 				let arg_name = (remapKeyword v.v_name) in
-				let message_name = if !first_arg then "" else if Array.length sel_arr > 1 then sel_arr.(!index) else arg_name in
-				ctx.writer#write (Printf.sprintf "%s %s :%s?" (remapKeyword message_name) arg_name type_name);
+				let message_name = (remapKeyword arg_name) in
+				(* let message_name = if !first_arg then "" else if Array.length sel_arr > 1 then sel_arr.(!index) else arg_name in *)
+				ctx.writer#write (Printf.sprintf "%s %s :%s?" message_name arg_name type_name);
 				first_arg := false;
 				index := !index+1;
-				if not ctx.generating_header then begin
-					match c with
-					| None -> ();(* Hashtbl.add ctx.function_arguments arg_name (defaultValue arg_name) *)
-					| Some c -> Hashtbl.add ctx.function_arguments arg_name c
-				end
+				match c with
+				| None -> ();(* Hashtbl.add ctx.function_arguments arg_name (defaultValue arg_name) *)
+				| Some c -> Hashtbl.add ctx.function_arguments arg_name c
 			) f.tf_args;
 			ctx.writer#write ")";
 			
@@ -839,12 +836,10 @@ let generateFunctionHeader ctx name (meta:metadata) (f:tfunc) params pos is_stat
 			concat ctx " " (fun (v,c) ->
 				let type_name = typeToString ctx v.v_type pos in
 				let arg_name = (remapKeyword v.v_name) in
-				ctx.writer#write (Printf.sprintf ":(%s%s)%s" type_name (addPointerIfNeeded type_name) arg_name);
-				if not ctx.generating_header then begin
-					match c with
-					| None -> ();(* Hashtbl.add ctx.function_arguments arg_name (defaultValue arg_name) *)
-					| Some c -> Hashtbl.add ctx.function_arguments arg_name c
-				end
+				ctx.writer#write (Printf.sprintf "%s:%s?" arg_name type_name);
+				match c with
+				| None -> ();(* Hashtbl.add ctx.function_arguments arg_name (defaultValue arg_name) *)
+				| Some c -> Hashtbl.add ctx.function_arguments arg_name c
 			) f.tf_args;
 			
 		| HeaderBlock ->
@@ -998,7 +993,7 @@ let rec generateCall ctx (func:texpr) arg_list =
 						if Array.length sel_arr > 0 then
 							ctx.writer#write (" "^sel_arr.(!index)^":")
 						else
-							ctx.writer#write (if !index = 0 then ":" else (" "^(remapKeyword name)^":"));
+							ctx.writer#write ((if !index = 0 then "(" else ", ")^(remapKeyword name)^":");
 						(* TODO: inspect the bug, why is there a different number of arguments. In StringBuf *)
 						if !index >= (List.length arg_list) then
 							ctx.writer#write "nil"
@@ -1270,9 +1265,9 @@ and generateExpression ctx e =
 					ctx.writer#write " + ";
 				| "+=" ->
 					generateValueOpAsString ctx e1;
-					ctx.writer#write " = [NSString stringWithFormat:@\"%@%@\", ";
+					ctx.writer#write " = ";
 					generateValueOpAsString ctx e1;
-					ctx.writer#write ", ";
+					ctx.writer#write " + ";
 				| _ -> ()
 			);
 			generateValueOpAsString ctx e2;
@@ -1327,11 +1322,12 @@ and generateExpression ctx e =
 				| TFun _ -> if ctx.generating_left_side_of_operator && not ctx.evaluating_condition then "hx_dyn_" else "";
 				| _ -> "";
 			) in
-			let fan = if (ctx.generating_self_access && ctx.generating_calls>0 && ctx.generating_fields>=2) then "." 
+			ctx.writer#write ("."^(remapKeyword (field_name fa)));
+			(* let fan = if (ctx.generating_self_access && ctx.generating_calls>0 && ctx.generating_fields>=2) then "." 
 			else if (not ctx.generating_self_access && ctx.generating_calls>0) then " "
 			else if (ctx.generating_self_access && ctx.generating_calls>0) then " " else "." in
 			ctx.writer#write (fan^(if ctx.generating_custom_selector then "" else f_prefix^(remapKeyword (field_name fa))));
-			ctx.generating_property_access <- false;
+			ctx.generating_property_access <- false; *)
 			
 		| FStatic (cls, cls_f) -> (* ctx.writer#write "-FStatic-"; *)
 			(match cls_f.cf_type with
@@ -1371,7 +1367,7 @@ and generateExpression ctx e =
 					| ([],"Math")
 					| ([],"String")
 					| ([],"Date") -> redefineCStatic ctx e.etype (field_name fa);
-					| _ -> ctx.writer#write (" "^(remapKeyword (field_name fa)));
+					| _ -> ctx.writer#write ("."^(remapKeyword (field_name fa)));
 				);
 			
 			| TAnon _ -> ctx.writer#write "-TAnon-";
@@ -1386,7 +1382,7 @@ and generateExpression ctx e =
 			(* Accesing the field of an anonimous object by calling it as a function *)
 			(* TODO: distinguish this two kind of accesses *)
 			generateValue ctx e;
-			ctx.writer#write (" " ^ (field_name fa))
+			ctx.writer#write ("." ^ (field_name fa))
 		| FDynamic name -> debug ctx "-FDynamic-";
 			(* This is called by untyped *)
 			if ctx.generating_selector then begin
@@ -1814,14 +1810,14 @@ and generateExpression ctx e =
 		let tmp = genLocal ctx "_it" in
 		ctx.writer#write (Printf.sprintf "id %s = " tmp);
 		generateValue ctx it;
-		ctx.writer#write ";";
+		(* ctx.writer#write ";"; *)
 		ctx.writer#new_line;
 		ctx.writer#write (Printf.sprintf "while ( %s.hasNext() ) do " tmp);
 		ctx.writer#begin_block;
 		ctx.writer#write (Printf.sprintf "%s %s = %s.next();" (typeToString ctx v.v_type e.epos) (remapKeyword v.v_name) tmp);
 		ctx.writer#new_line;
 		generateExpression ctx e;
-		ctx.writer#write ";";
+		(* ctx.writer#write ";"; *)
 		ctx.writer#new_line;
 		ctx.writer#end_block;
 		ctx.writer#new_line;
@@ -1995,7 +1991,7 @@ and generateValue ctx e =
 	| TReturn _
 	| TBreak
 	| TContinue ->
-		ctx.writer#write ("UNSUPPORTED")
+		ctx.writer#write ("continue")
 		(* unsupported e.epos *)
 	| TFor _
 	| TWhile _
@@ -2058,65 +2054,61 @@ let generateProperty ctx field pos is_static =
 	let id = field.cf_name in
 	let t = typeToString ctx field.cf_type pos in
 	(* let class_name = (snd ctx.class_def.cl_path) in *)
-	if ctx.generating_header then begin
-		if is_static then begin
-			ctx.writer#write ("\tstatic var ("^t^(addPointerIfNeeded t)^") "^id^"\n");
-			ctx.writer#write ("\tstatic var set"^(String.capitalize id)^":("^t^(addPointerIfNeeded t)^")val")
-		end
-	else begin
-		let getter = match field.cf_kind with
-		| Var v -> (match v.v_read with
-			| AccCall -> Printf.sprintf ", getter=get_%s" field.cf_name;
-			| _ -> "")
-		| _ -> "" in
-		let setter = match field.cf_kind with
-		| Var v -> (match v.v_write with
-			| AccCall -> Printf.sprintf ", setter=set_%s" field.cf_name;
-			| _ -> "")
-		| _ -> "" in
-		let is_enum = (match field.cf_type with
-			| TEnum (e,_) -> true
-			| _ -> false) in
-		let strong = if Meta.has Meta.Weak field.cf_meta then ", weak" else if is_enum then "" else if (isPointer t) then ", strong" else "" in
-		let readonly = if false then ", readonly" else "" in
-		ctx.writer#write (Printf.sprintf "@property (nonatomic%s%s%s%s) %s %s%s;" strong readonly getter setter t (addPointerIfNeeded t) (remapKeyword id))
-	end
-	end
-	else begin
-		if is_static then begin
-			let gen_init_value () = match field.cf_expr with
-			| None -> ()
-			| Some e -> generateValue ctx e in
-			ctx.writer#write ("static "^t^(addPointerIfNeeded t)^" "^id^";
+	if is_static then begin
+		ctx.writer#write ("\tstatic var ("^t^(addPointerIfNeeded t)^") "^id^"\n");
+		ctx.writer#write ("\tstatic var set"^(String.capitalize id)^":("^t^(addPointerIfNeeded t)^")val")
+	end;
+	
+	(* let getter = match field.cf_kind with
+	| Var v -> (match v.v_read with
+		| AccCall -> Printf.sprintf ", getter=get_%s" field.cf_name;
+		| _ -> "")
+	| _ -> "" in
+	let setter = match field.cf_kind with
+	| Var v -> (match v.v_write with
+		| AccCall -> Printf.sprintf ", setter=set_%s" field.cf_name;
+		| _ -> "")
+	| _ -> "" in
+	let is_enum = (match field.cf_type with
+		| TEnum (e,_) -> true
+		| _ -> false) in
+	let strong = if Meta.has Meta.Weak field.cf_meta then ", weak" else if is_enum then "" else if (isPointer t) then ", strong" else "" in
+	let readonly = if false then ", readonly" else "" in
+	ctx.writer#write (Printf.sprintf "@property (nonatomic%s%s%s%s) %s %s%s;" strong readonly getter setter t (addPointerIfNeeded t) (remapKeyword id))
+	 *)
+	if is_static then begin
+		let gen_init_value () = match field.cf_expr with
+		| None -> ()
+		| Some e -> generateValue ctx e in
+		ctx.writer#write ("static "^t^(addPointerIfNeeded t)^" "^id^";
 + ("^t^(addPointerIfNeeded t)^") "^id^" {
-	if ("^id^" == nil) "^id^" = ");
-			gen_init_value();
-			ctx.writer#write (";
-	return "^id^";
+if ("^id^" == nil) "^id^" = ");
+		gen_init_value();
+		ctx.writer#write (";
+return "^id^";
 }
 + (void) set"^(String.capitalize id)^":("^t^(addPointerIfNeeded t)^")hx_val {
-	"^id^" = hx_val;
+"^id^" = hx_val;
 }")
+	end
+	else begin
+		if ctx.is_extension then begin
+			(* A category can't use the @synthesize, so we create a getter and setter for the property *)
+			(* http://ddeville.me/2011/03/add-variables-to-an-existing-class-in-objective-c/ *)
+			(* let retain = String.length t == String.length (addPointerIfNeeded t) in *)
+			(* Also, keeping a variable in the category affects all the instances *)
+			(* So we use a metadata to place content in the methods *)
+
+			if (Meta.has Meta.GetterBody field.cf_meta) then begin
+				
+				ctx.writer#write ("// Getters/setters for property: "^id^"\n");
+				ctx.writer#write (" func "^t^(addPointerIfNeeded t)^") "^id^" { "^(getFirstMetaValue Meta.GetterBody field.cf_meta)^" }\n");
+				ctx.writer#write (" func set"^(String.capitalize id)^":("^t^(addPointerIfNeeded t)^")val { nil; }\n");
+			end else
+				ctx.writer#write ("// Please provide a getterBody for the property: "^id^"\n");
+		end else begin
+			ctx.writer#write (Printf.sprintf "@synthesize %s;" (remapKeyword id))
 		end
-		else begin
-			if ctx.is_extension then begin
-				(* A category can't use the @synthesize, so we create a getter and setter for the property *)
-				(* http://ddeville.me/2011/03/add-variables-to-an-existing-class-in-objective-c/ *)
-				(* let retain = String.length t == String.length (addPointerIfNeeded t) in *)
-				(* Also, keeping a variable in the category affects all the instances *)
-				(* So we use a metadata to place content in the methods *)
-	
-				if (Meta.has Meta.GetterBody field.cf_meta) then begin
-					
-					ctx.writer#write ("// Getters/setters for property: "^id^"\n");
-					ctx.writer#write (" func "^t^(addPointerIfNeeded t)^") "^id^" { "^(getFirstMetaValue Meta.GetterBody field.cf_meta)^" }\n");
-					ctx.writer#write (" func set"^(String.capitalize id)^":("^t^(addPointerIfNeeded t)^")val { nil; }\n");
-				end else
-					ctx.writer#write ("// Please provide a getterBody for the property: "^id^"\n");
-			end else begin
-				ctx.writer#write (Printf.sprintf "@synthesize %s;" (remapKeyword id))
-			end
-		end;
 	end
 	(* Generate functions located in the hx interfaces *)
 	(* let rec loop = function
@@ -2235,11 +2227,7 @@ let generateField ctx is_static field =
 			(* Generate function header *)
 			let h = generateFunctionHeader ctx (Some (field.cf_name, field.cf_meta)) field.cf_meta func field.cf_params pos is_static HeaderObjc in
 			h();
-			(* Generate function content if is not a header file *)
-			if not ctx.generating_header then
-				generateExpression ctx func.tf_expr
-			else
-				ctx.writer#write ";";
+			generateExpression ctx func.tf_expr
 		end
 	| Some { eexpr = TFunction func }, Method (MethDynamic) ->
 		ctx.writer#write "// Dynamic method defined with an swift method and a block property\n";
@@ -2255,33 +2243,25 @@ let generateField ctx is_static field =
 			in
 			"" ^ loop field.cf_meta
 		) in
-		if not ctx.generating_header then begin
-			ctx.writer#begin_block;
-			if not ctx.in_static then begin
-				ctx.writer#write ("if ( hx_dyn_" ^ func_name ^ " ) { hx_dyn_" ^ func_name ^ "(");
-				concat ctx ", " (fun (v,c) ->
-					ctx.writer#write (remapKeyword v.v_name);
-				) func.tf_args;
-				ctx.writer#write ("); return; }");
-				ctx.writer#new_line;
-			end;
-			generateExpression ctx func.tf_expr
-		end else
-			ctx.writer#write ";\n";
-			
-		if ctx.generating_header then begin
-			ctx.writer#write (Printf.sprintf "var ");
-			let h = generateFunctionHeader ctx (Some (field.cf_name, field.cf_meta)) field.cf_meta func field.cf_params pos is_static HeaderDynamic in h();
-			(* ctx.writer#write ";"; *)
-		end else begin
-			ctx.writer#write (Printf.sprintf "\n@synthesize hx_dyn_%s;\n" func_name);
+		ctx.writer#begin_block;
+		if not ctx.in_static then begin
+			ctx.writer#write ("if ( hx_dyn_" ^ func_name ^ " ) { hx_dyn_" ^ func_name ^ "(");
+			concat ctx ", " (fun (v,c) ->
+				ctx.writer#write (remapKeyword v.v_name);
+			) func.tf_args;
+			ctx.writer#write ("); return; }");
+			ctx.writer#new_line;
 		end;
+		generateExpression ctx func.tf_expr;
+			
+		ctx.writer#write (Printf.sprintf "var ");
+		let h = generateFunctionHeader ctx (Some (field.cf_name, field.cf_meta)) field.cf_meta func field.cf_params pos is_static HeaderDynamic in h();
 		ctx.generating_swift_block <- false;
 	| _ ->
 		let is_getset = (match field.cf_kind with Var { v_read = AccCall _ } | Var { v_write = AccCall _ } -> true | _ -> false) in
 		match follow field.cf_type with
 			| TFun (args,r) -> ()
-			| _ when is_getset -> if ctx.generating_header then generateProperty ctx field pos is_static
+			| _ when is_getset -> generateProperty ctx field pos is_static
 			| _ -> generateProperty ctx field pos is_static
 ;;
 
@@ -3284,7 +3264,6 @@ let generate common_ctx =
 					let ctx_h = newContext common_ctx file_h imports_manager file_info in
 					m.ctx_h <- ctx_h;
 					m.ctx_h.writer#write_copy module_path (appName common_ctx);
-					m.ctx_h.generating_header <- true;
 				end;
 				generateEnum m.ctx_h enum_def;
 			end;
