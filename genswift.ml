@@ -332,15 +332,11 @@ let newContext common_ctx writer imports_manager file_info = {
 }
 type module_context = {
 	mutable module_path_m : path;
-	mutable module_path_h : path;
 	mutable ctx_m : context;
-	mutable ctx_h : context;
 }
-let newModuleContext ctx_m ctx_h = {
+let newModuleContext ctx_m = {
 	module_path_m = ([],"");
-	module_path_h = ([],"");
 	ctx_m = ctx_m;
-	ctx_h = ctx_h;
 }
 
 let debug ctx str =
@@ -371,7 +367,7 @@ let rec isString ctx e =
 	(* TODO: left side of the binop is never discovered as being string *)
 	(* ctx.writer#write ("\"-CHECK ISSTRING-\""); *)
 	(match e.eexpr with
-	| TBinop (op,e1,e2) -> (* ctx.writer#write ("\"-redirect check isString-\""); *) isString ctx e1 or isString ctx e2
+	| TBinop (op,e1,e2) -> (* ctx.writer#write ("\"-redirect check isString-\""); *) isString ctx e1 || isString ctx e2
 	| TLocal v ->
 		(* ctx.writer#write ("\"-check local-\""); *)
 		(match v.v_type with
@@ -622,7 +618,7 @@ let rec typeToString ctx t p =
 		| KNormal | KGeneric | KGenericInstance _ ->
 			ctx.imports_manager#add_class c;
 			remapHaxeTypeToSwift ctx false c.cl_path p
-		| KTypeParameter _ | KExtension _ | KExpr _ | KMacroType | KAbstractImpl _ -> "id")
+		| KTypeParameter _ | KExtension _ | KExpr _ | KMacroType | KAbstractImpl _ | KGenericBuild _ -> "id")
 	| TFun (args, ret) ->
 		let r = ref "" in
 		let index = ref 0 in
@@ -878,7 +874,7 @@ let generateFunctionHeader ctx name (meta:metadata) (f:tfunc) params pos is_stat
 	);
 	
 	(* Return type *)
-	ctx.writer#write (Printf.sprintf " -> %s " (addPointerIfNeeded return_type));
+	(* ctx.writer#write (Printf.sprintf " -> %s " (addPointerIfNeeded return_type)); *)
 	
 	(* Generate the block version of the method. When we pass a reference to a function we pass to this block *)
 	(* if not ctx.generating_header then begin
@@ -1256,7 +1252,7 @@ and generateExpression ctx e =
 		(* if isString ctx e2 then ctx.writer#write ("\"-isString2-\""); *)
 		
 		
-		if (s_op="+" or s_op="+=") && (isString ctx e1 or isString ctx e2) then begin
+		if (s_op="+" || s_op="+=") && (isString ctx e1 || isString ctx e2) then begin
 			ctx.generating_string_append <- ctx.generating_string_append + 1;
 			(match s_op with
 				| "+" ->
@@ -1283,7 +1279,7 @@ and generateExpression ctx e =
 			generateValueOp ctx e2;
 			ctx.require_pointer <- false;
 			ctx.writer#write "]";
-		end else if (s_op="==") && (isString ctx e1 or isString ctx e2) then begin
+		end else if (s_op="==") && (isString ctx e1 || isString ctx e2) then begin
 			ctx.writer#write "[";
 			generateValueOp ctx e1;
 			ctx.writer#write " isEqual:";
@@ -1322,7 +1318,7 @@ and generateExpression ctx e =
 				| TFun _ -> if ctx.generating_left_side_of_operator && not ctx.evaluating_condition then "hx_dyn_" else "";
 				| _ -> "";
 			) in
-			ctx.writer#write ("."^(remapKeyword (field_name fa)));
+			ctx.writer#write (f_prefix^"."^(remapKeyword (field_name fa)));
 			(* let fan = if (ctx.generating_self_access && ctx.generating_calls>0 && ctx.generating_fields>=2) then "." 
 			else if (not ctx.generating_self_access && ctx.generating_calls>0) then " "
 			else if (ctx.generating_self_access && ctx.generating_calls>0) then " " else "." in
@@ -1941,7 +1937,7 @@ and generateValue ctx e =
 		if ctx.in_static then
 			ctx.writer#write (Printf.sprintf "^(%s%s)" t (addPointerIfNeeded t))
 		else
-			ctx.writer#write (Printf.sprintf "((%s)self.%s " t r.v_name);
+			ctx.writer#write (Printf.sprintf "((self.%s as %s)" r.v_name t);
 		(fun() ->
 			if block then begin
 				ctx.writer#new_line;
@@ -1951,7 +1947,7 @@ and generateValue ctx e =
 				ctx.writer#new_line;
 				ctx.writer#write (Printf.sprintf "%s* %s" t r.v_name);
 				ctx.writer#end_block;
-						
+				
 				ctx.writer#new_line;
 				ctx.writer#write "}";
 			end;
@@ -1977,12 +1973,14 @@ and generateValue ctx e =
 	| TNew _
 	| TUnop _
 	| TMeta _
+	| TVar (_, _)
 	| TFunction _ ->
 		generateExpression ctx e
 	| TCast (e1,t) ->
-		let t = typeToString ctx e.etype e.epos in
-		ctx.writer#write (Printf.sprintf "(%s%s)" t (addPointerIfNeeded t));
+		ctx.writer#write ("(");
 		generateValue ctx e1;
+		let t = typeToString ctx e.etype e.epos in
+		ctx.writer#write (Printf.sprintf " as %s)" t);
 		(* match t with
 		| None ->
 		generateValue ctx e1
@@ -2051,13 +2049,13 @@ and generateValue ctx e =
 		v()
 
 let generateProperty ctx field pos is_static =
-	let id = field.cf_name in
+	let cf_name = field.cf_name in
 	let t = typeToString ctx field.cf_type pos in
 	(* let class_name = (snd ctx.class_def.cl_path) in *)
-	if is_static then begin
+	(* if is_static then begin
 		ctx.writer#write ("\tstatic var ("^t^(addPointerIfNeeded t)^") "^id^"\n");
 		ctx.writer#write ("\tstatic var set"^(String.capitalize id)^":("^t^(addPointerIfNeeded t)^")val")
-	end;
+	end; *)
 	
 	(* let getter = match field.cf_kind with
 	| Var v -> (match v.v_read with
@@ -2076,20 +2074,32 @@ let generateProperty ctx field pos is_static =
 	let readonly = if false then ", readonly" else "" in
 	ctx.writer#write (Printf.sprintf "@property (nonatomic%s%s%s%s) %s %s%s;" strong readonly getter setter t (addPointerIfNeeded t) (remapKeyword id))
 	 *)
+		(* struct staticvar_struct {
+				static var staticvar_ : Int? = nil
+			}
+			class var staticvar : Int? {
+				return staticvar_struct.staticvar_
+			}
+			class func staticvar (v:Int?) {
+				staticvar_struct.staticvar_ = v
+			} *)
+			
 	if is_static then begin
 		let gen_init_value () = match field.cf_expr with
 		| None -> ()
 		| Some e -> generateValue ctx e in
-		ctx.writer#write ("static "^t^(addPointerIfNeeded t)^" "^id^";
-+ ("^t^(addPointerIfNeeded t)^") "^id^" {
-if ("^id^" == nil) "^id^" = ");
+		ctx.writer#write ("// Emulate static var named: "^cf_name^"
+	struct "^cf_name^"_struct {
+		static var "^cf_name^" :"^t^"? = ");
 		gen_init_value();
-		ctx.writer#write (";
-return "^id^";
-}
-+ (void) set"^(String.capitalize id)^":("^t^(addPointerIfNeeded t)^")hx_val {
-"^id^" = hx_val;
-}")
+		ctx.writer#write ("
+	}
+	class var "^cf_name^" :"^t^"? {
+		return "^cf_name^"_struct."^cf_name^"
+	}
+	class func "^cf_name^" (v:"^t^"?) {
+		"^cf_name^"_struct."^cf_name^" = v
+	}")
 	end
 	else begin
 		if ctx.is_extension then begin
@@ -2101,13 +2111,13 @@ return "^id^";
 
 			if (Meta.has Meta.GetterBody field.cf_meta) then begin
 				
-				ctx.writer#write ("// Getters/setters for property: "^id^"\n");
-				ctx.writer#write (" func "^t^(addPointerIfNeeded t)^") "^id^" { "^(getFirstMetaValue Meta.GetterBody field.cf_meta)^" }\n");
-				ctx.writer#write (" func set"^(String.capitalize id)^":("^t^(addPointerIfNeeded t)^")val { nil; }\n");
+				ctx.writer#write ("// Getters/setters for property: "^cf_name^"\n");
+				ctx.writer#write ("func get_"^t^(addPointerIfNeeded t)^") "^cf_name^" { "^(getFirstMetaValue Meta.GetterBody field.cf_meta)^" }\n");
+				ctx.writer#write ("func set_"^(String.capitalize cf_name)^":("^t^(addPointerIfNeeded t)^")val { nil; }\n");
 			end else
-				ctx.writer#write ("// Please provide a getterBody for the property: "^id^"\n");
+				ctx.writer#write ("// Please provide a getterBody for the property: "^cf_name^"\n");
 		end else begin
-			ctx.writer#write (Printf.sprintf "@synthesize %s;" (remapKeyword id))
+			ctx.writer#write (Printf.sprintf "var %s :%s?" (remapKeyword cf_name) t)
 		end
 	end
 	(* Generate functions located in the hx interfaces *)
@@ -2257,7 +2267,7 @@ let generateField ctx is_static field =
 		ctx.writer#write (Printf.sprintf "var ");
 		let h = generateFunctionHeader ctx (Some (field.cf_name, field.cf_meta)) field.cf_meta func field.cf_params pos is_static HeaderDynamic in h();
 		ctx.generating_swift_block <- false;
-	| _ ->
+	| _, _ ->
 		let is_getset = (match field.cf_kind with Var { v_read = AccCall _ } | Var { v_write = AccCall _ } -> true | _ -> false) in
 		match follow field.cf_type with
 			| TFun (args,r) -> ()
@@ -3080,12 +3090,11 @@ let generatePlist common_ctx file_info  =
 (* Generate the enum. ctx should be the header file *)
 let generateEnum ctx enum_def =
 	(* print_endline ("> Generating enum : "^(snd enum_def.e_path)); *)
-    ctx.writer#write "typedef enum";
+    ctx.writer#write ("enum " ^ (snd enum_def.e_path) ^ " ");
 	ctx.writer#begin_block;
 	ctx.writer#write (String.concat ",\n\t" enum_def.e_names);
 	ctx.writer#new_line;
 	ctx.writer#end_block;
-    ctx.writer#write (" " ^ (snd enum_def.e_path) ^ ";");
 	ctx.writer#new_line
 ;;
 
@@ -3148,13 +3157,12 @@ let generateClass ctx files_manager imports_manager =
 		(if c.cl_interface then "interface" else "class") (snd c.cl_path); *)
 		if ctx.class_def.cl_implements != [] then begin
 			(* Add implement classes *)
-			ctx.writer#write "<";
 			(match ctx.class_def.cl_implements with
 			| [] -> ()
 			| l -> concat ctx ", " (fun (i,_) -> ctx.writer#write (Printf.sprintf "%s" (snd i.cl_path))) l
 			);
-			ctx.writer#write "{";
-		end
+		end;
+		ctx.writer#begin_block;
 	end;
 	
 	ctx.writer#new_line;
@@ -3178,8 +3186,10 @@ let generateClass ctx files_manager imports_manager =
 		generateField ctx false f;
 		ctx.generating_constructor <- false;
 	);
-	
-	ctx.writer#write "\n\n}\n"
+
+	ctx.writer#new_line;
+	ctx.writer#end_block;
+	ctx.writer#new_line;
 ;;
 
 (* The main entry of the generator *)
@@ -3194,11 +3204,9 @@ let generate common_ctx =
 	let file_info = ref PMap.empty in(* Not sure for what is used *)
 	(* Generate the HXObject category *)
 	let temp_file_path = ([],"HXObject") in
-	let file_m = newSourceFile src_dir temp_file_path ".m" in
-	let file_h = newSourceFile src_dir temp_file_path ".h" in
+	let file_m = newSourceFile src_dir temp_file_path ".swift" in
 	let ctx_m = newContext common_ctx file_m imports_manager file_info in
-	let ctx_h = newContext common_ctx file_h imports_manager file_info in
-	let m = newModuleContext ctx_m ctx_h in
+	let m = newModuleContext ctx_m in
 	(* Generate classes and enums in the coresponding module *)
 	List.iter ( fun obj_def ->
 		(* print_endline ("> Generating object : ? "); *)
@@ -3217,7 +3225,6 @@ let generate common_ctx =
 				let class_path = class_def.cl_path in
 				let is_extension = (Meta.has Meta.Extension class_def.cl_meta) in
 				let is_new_module_m = (m.module_path_m != module_path) in
-				let is_new_module_h = (m.module_path_h != module_path) in
 				(* When we create a new module reset the 'frameworks' and 'imports' that where stored for the previous module *)
 				(* A copy of the frameworks are kept in a non-resetable variable for later usage in .pbxproj *)
 				imports_manager#reset;
@@ -3252,20 +3259,19 @@ let generate common_ctx =
 			if not enum_def.e_extern then begin
 				let module_path = enum_def.e_module.m_path in
 				(* let class_path = enum_def.e_path in *)
-				let is_new_module = (m.module_path_h != module_path) in
+				let is_new_module = (m.module_path_m != module_path) in
 				(* print_endline ("> Generating enum : "^(snd enum_def.e_path)^" in module : "^(snd module_path)); *)
 				if is_new_module then begin
 					(* print_endline ("> New module for enum : "^(snd module_path)); *)
 					m.ctx_m.writer#close;
-					m.ctx_h.writer#close;
-					m.module_path_h <- module_path;
+					m.module_path_m <- module_path;
 					
-					let file_h = newSourceFile src_dir module_path ".h" in
-					let ctx_h = newContext common_ctx file_h imports_manager file_info in
-					m.ctx_h <- ctx_h;
-					m.ctx_h.writer#write_copy module_path (appName common_ctx);
+					let file_m = newSourceFile src_dir module_path ".swift" in
+					let ctx_m = newContext common_ctx file_m imports_manager file_info in
+					m.ctx_m <- ctx_m;
+					m.ctx_m.writer#write_copy module_path (appName common_ctx);
 				end;
-				generateEnum m.ctx_h enum_def;
+				generateEnum m.ctx_m enum_def;
 			end;
 		| TTypeDecl _ ->
 			()
