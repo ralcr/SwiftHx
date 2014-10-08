@@ -1421,7 +1421,7 @@ try
 			loop Common.swift_ios_versions;
 			Common.raw_define com "ios";
 			add_std "swift";
-			"m"
+			"swift"
 		| Python ->
 			add_std "python";
 			"python"

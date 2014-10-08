@@ -198,7 +198,7 @@ class sourceWriter write_func close_func =
 		List.iter (fun class_path -> this#write ("import " ^ class_path ^ "\n")) class_paths
 	method write_frameworks_imports f_list = 
 		List.iter (fun name ->
-			this#write ("#import <" ^ name ^ "/" ^ name ^ ".h>\n")
+			this#write ("import " ^ name ^ "\n")
 		) f_list
 	method write_copy (module_path:path) (app_name:string) =
 		this#write ("//
@@ -286,8 +286,6 @@ type context = {
 	mutable generating_selector : bool;
 	mutable generating_custom_selector : bool;
 	mutable generating_c_call : bool;
-	mutable generating_calls : int;(* How many calls are generated in a row *)
-	mutable generating_fields : int;(* How many fields are generated in a row *)
 	mutable generating_string_append : int;
 	mutable require_pointer : bool;
 	mutable return_needs_semicolon : bool;
@@ -322,8 +320,6 @@ let newContext common_ctx writer imports_manager file_info = {
 	generating_selector = false;
 	generating_custom_selector = false;
 	generating_c_call = false;
-	generating_calls = 0;
-	generating_fields = 0;
 	generating_string_append = 0;
 	require_pointer = false;
 	return_needs_semicolon = false;
@@ -525,7 +521,7 @@ let remapHaxeTypeToSwift ctx is_static path pos =
 		(match name with
 		| "Dynamic" -> "AnyObject"
 		| "Date" -> "NSDate"
-		| "Void" -> "Void"
+		| "Void" -> ""
 		| _ -> name)
 	| (pack,name) ->
 		(match name with
@@ -598,7 +594,7 @@ let rec typeToString ctx t p =
 	match t with
 	(* | TEnum (te,tp) -> "TEnumInBlock" *)
 	| TEnum _ | TInst _ when List.memq t ctx.local_types ->
-		"id"
+		"AnyObject"
 	| TAbstract (a,_) ->(* ctx.writer#write "TAbstract?"; *)
 		ctx.imports_manager#add_abstract a;
 		remapHaxeTypeToSwift ctx true a.a_path p;
@@ -618,7 +614,7 @@ let rec typeToString ctx t p =
 		| KNormal | KGeneric | KGenericInstance _ ->
 			ctx.imports_manager#add_class c;
 			remapHaxeTypeToSwift ctx false c.cl_path p
-		| KTypeParameter _ | KExtension _ | KExpr _ | KMacroType | KAbstractImpl _ | KGenericBuild _ -> "id")
+		| KTypeParameter _ | KExtension _ | KExpr _ | KMacroType | KAbstractImpl _ | KGenericBuild _ -> "AnyObject")
 	| TFun (args, ret) ->
 		let r = ref "" in
 		let index = ref 0 in
@@ -634,7 +630,7 @@ let rec typeToString ctx t p =
 		) args;
 		(* Write the type of a function, the block definition *)
 		(* !r *)
-		"id"
+		"AnyObject"
 	| TMono r -> (match !r with None -> "AnyObject" | Some t -> typeToString ctx t p)
 	| TAnon anon -> "AnyObject"
 	| TDynamic _ -> "AnyObject"
@@ -775,7 +771,7 @@ let generateFunctionHeader ctx name (meta:metadata) (f:tfunc) params pos is_stat
 	let first_arg = ref true in
 	let sel_list = if (String.length sel > 0) then Str.split_delim (Str.regexp ":") sel else [] in
 	let sel_arr = Array.of_list sel_list in
-	let return_type = if ctx.generating_constructor then "AnyObject" else typeToString ctx f.tf_type pos in
+	let return_type = if ctx.generating_constructor then "" else typeToString ctx f.tf_type pos in
 	(* This part generates the name of the function, the first part of the swift message *)
 	let func_name = if Array.length sel_arr > 1 then sel_arr.(0) else begin
 		(match name with None -> "" | Some (n,meta) ->
@@ -874,7 +870,7 @@ let generateFunctionHeader ctx name (meta:metadata) (f:tfunc) params pos is_stat
 	);
 	
 	(* Return type *)
-	(* ctx.writer#write (Printf.sprintf " -> %s " (addPointerIfNeeded return_type)); *)
+	ctx.writer#write (if (String.length return_type > 0) then (Printf.sprintf " -> %s? " return_type) else " ");
 	
 	(* Generate the block version of the method. When we pass a reference to a function we pass to this block *)
 	(* if not ctx.generating_header then begin
@@ -914,37 +910,65 @@ let generateFunctionHeader ctx name (meta:metadata) (f:tfunc) params pos is_stat
 let rec generateCall ctx (func:texpr) arg_list =
 	debug ctx ("\"-CALL-"^(Type.s_expr_kind func)^">\"");
 	
-	(* Generate a C call. Used in some low level operations from cocoa frameworks: CoreGraphics *)
-	if ctx.generating_c_call then begin
-		debug ctx "-C-";
-		match func.eexpr, arg_list with
-		| TCall (x,_) , el ->
-			ctx.writer#write "(";
-			generateValue ctx func;
-			ctx.writer#write ")";
-			ctx.writer#write "(";
-			concat ctx ", " (generateValue ctx) arg_list;
-			ctx.writer#write ")";
-		(* | TField(ee,v),args when isVarField ee v ->
-			ctx.writer#write "TField(";
-			generateValue ctx func;
-			ctx.writer#write ")";
-			ctx.writer#write "(";
-			concat ctx ", " (generateValue ctx) arg_list;
-			ctx.writer#write ")" *)
-		| _ ->
-			generateValue ctx func;
-			ctx.writer#write "(";
-			concat ctx ", " (generateValue ctx) arg_list;
-			ctx.writer#write ")";
+	(* Check if the called function has a custom selector defined *)
+	let sel = (match func.eexpr with
+		(* TODO: TStatic *)
+		| TField (e, FInstance (c, cf)) ->
+			if Meta.has Meta.Selector cf.cf_meta then (getFirstMetaValue Meta.Selector cf.cf_meta)
+			else ""
+		| _ -> "";
+	) in
+	ctx.generating_custom_selector <- (String.length sel > 0);
+	generateValue ctx func;
+	ctx.generating_custom_selector <- false;
+	ctx.writer#write "(";(* Open parathesis for call *)
 	
-	(* Generate an Swift call with [] *)
-	end else begin
+	if List.length arg_list > 0 then begin
+		let sel_list = if (String.length sel > 0) then Str.split_delim (Str.regexp ":") sel else [] in
+		let sel_arr = Array.of_list sel_list in
+		let args_array_e = Array.of_list arg_list in
+		let index = ref 0 in
+		let rec gen et =
+		(match et with
+			| TFun (args, ret) ->
+				(* let args_array_e = Array.of_list args in *)
+				if !index < (List.length args) then
+				List.iter ( fun (name, b, t) ->
+					(* print_endline (Printf.sprintf "%d %d %d" (!index) (List.length args) (List.length arg_list)); *)
+					(* ctx.generating_method_argument <- true; *)
+					if Array.length sel_arr > 0 then
+						ctx.writer#write (" "^sel_arr.(!index)^":")
+					else
+						ctx.writer#write ((if !index = 0 then "" else ", ")^(remapKeyword name)^":");
+					(* TODO: inspect the bug, why is there a different number of arguments. In StringBuf *)
+					if !index >= (List.length arg_list) then
+						ctx.writer#write "nil"
+					else
+						generateValue ctx args_array_e.(!index);
+					index := !index + 1;
+				) args;
+				(* ctx.generating_method_argument <- false; *)
+			(* Generated in Array *)
+			| TMono r -> (match !r with 
+				| None -> ctx.writer#write "-TMonoNone"
+				| Some v -> gen v)
+			| TEnum (e,tl) -> ctx.writer#write "-TEnum"
+			| TInst (c,tl) -> ctx.writer#write "-TInst"
+			| TType (t,tl) -> ctx.writer#write "-TType"
+			| TAbstract (a,tl) -> ctx.writer#write "-TAbstract"
+			| TAnon a -> ctx.writer#write "-TAnon-"
+			| TDynamic t2 ->
+				ctx.writer#write ":";
+				concat ctx " :" (generateValue ctx) arg_list;
+			| TLazy f -> ctx.writer#write "-TLazy call-"
+		) in
+		gen func.etype;
+	end;
+	ctx.writer#write ")"(* Open parathesis of the call *)
+		
 		(* ctx.writer#write "-OBJC-"; *)
 		(* A call should cancel the TField *)
 		(* When we have a self followed by 2 TFields in a row we use dot notation for the first field *)
-		if ctx.generating_fields > 0 then ctx.generating_fields <- ctx.generating_fields - 1;
-		ctx.generating_calls <- ctx.generating_calls + 1;
 		(* Cast the result *)
 		(* ctx.writer#write "returning-"; *)
 		(* (match func.etype with
@@ -959,63 +983,6 @@ let rec generateCall ctx (func:texpr) arg_list =
 			| TAbstract _ -> ctx.writer#write "TAbstract";
 		); *)
 		(* ctx.writer#write "["; *)
-		
-		(* Check if the called function has a custom selector defined *)
-		let sel = (match func.eexpr with
-			(* TODO: TStatic *)
-			| TField (e, FInstance (c, cf)) ->
-				if Meta.has Meta.Selector cf.cf_meta then (getFirstMetaValue Meta.Selector cf.cf_meta)
-				else ""
-			| _ -> "";
-		) in
-		ctx.generating_custom_selector <- (String.length sel > 0);
-		generateValue ctx func;
-		ctx.generating_calls <- ctx.generating_calls - 1;
-		ctx.generating_custom_selector <- false;
-		
-		if List.length arg_list > 0 then begin
-			let sel_list = if (String.length sel > 0) then Str.split_delim (Str.regexp ":") sel else [] in
-			let sel_arr = Array.of_list sel_list in
-			let args_array_e = Array.of_list arg_list in
-			let index = ref 0 in
-			let rec gen et =
-			(match et with
-				| TFun (args, ret) ->
-					(* let args_array_e = Array.of_list args in *)
-					if !index < (List.length args) then
-					List.iter ( fun (name, b, t) ->
-						(* print_endline (Printf.sprintf "%d %d %d" (!index) (List.length args) (List.length arg_list)); *)
-						(* ctx.generating_method_argument <- true; *)
-						if Array.length sel_arr > 0 then
-							ctx.writer#write (" "^sel_arr.(!index)^":")
-						else
-							ctx.writer#write ((if !index = 0 then "(" else ", ")^(remapKeyword name)^":");
-						(* TODO: inspect the bug, why is there a different number of arguments. In StringBuf *)
-						if !index >= (List.length arg_list) then
-							ctx.writer#write "nil"
-						else
-							generateValue ctx args_array_e.(!index);
-						index := !index + 1;
-					) args;
-					(* ctx.generating_method_argument <- false; *)
-				(* Generated in Array *)
-				| TMono r -> (match !r with 
-					| None -> ctx.writer#write "-TMonoNone"
-					| Some v -> gen v)
-				| TEnum (e,tl) -> ctx.writer#write "-TEnum"
-				| TInst (c,tl) -> ctx.writer#write "-TInst"
-				| TType (t,tl) -> ctx.writer#write "-TType"
-				| TAbstract (a,tl) -> ctx.writer#write "-TAbstract"
-				| TAnon a -> ctx.writer#write "-TAnon-"
-				| TDynamic t2 ->
-					ctx.writer#write ":";
-					concat ctx " :" (generateValue ctx) arg_list;
-				| TLazy f -> ctx.writer#write "-TLazy call-"
-			) in
-			gen func.etype;
-		end;
-		ctx.writer#write ")";
-	end
 	
 and generateValueOp ctx e =
 	debug ctx "\"-gen_val_op-\"";
@@ -1084,27 +1051,14 @@ and redefineCStatic ctx etype s =
 			| "now" -> ctx.writer#write s
 			| "fromTime" -> ctx.writer#write s
 			| _ ->
-				let accesor = if ctx.generating_self_access then "."
-				else if ctx.generating_calls > 0 then " " else "." in
-				ctx.writer#write (Printf.sprintf "%s%s" accesor (remapKeyword s)));
+				ctx.writer#write (Printf.sprintf ".%s" (remapKeyword s)));
 		
 		| _ -> ()
-			(* ctx.writer#write "ooooooooo"; *)
-			(* self.someMethod *)
-			(* Generating dot notation for property and space for methods *)
-			(* let accesor = (* if (not ctx.generating_self_access && ctx.generating_property_access) then "." *)
-			(* if (ctx.generating_fields > 0 && not ctx.generating_self_access) then "." *)
-			if (ctx.generating_self_access || ctx.generating_fields > 0) then "." else " " in
-			(* else if ctx.generating_calls > 0 then " " else "." in *)
-			ctx.writer#write (Printf.sprintf "%s%s" accesor (remapKeyword s)); *)
 			
-			(* if (ctx.generating_self_access && ctx.generating_method_argument) then ctx.generating_calls <- ctx.generating_calls - 1; *)
-			(* if ctx.generating_self_access then ctx.generating_self_access <- false *)
 	in
 	match follow etype with
 	(* untyped str.intValue(); *)
 	| TInst (c,_) ->
-		(* let accessor = if (ctx.generating_calls > 0 && not ctx.generating_self_access) then " " else "." in *)
 		(* ctx.writer#write accessor; *)
 		field c;
 		(* ctx.generating_self_access <- false; *)
@@ -1144,10 +1098,6 @@ and generateExpression ctx e =
 		| TAbstract _ -> ctx.writer#write ">TAbstract<"); *)
 		
 		ctx.writer#write (remapKeyword v.v_name);
-		
-		(* ctx.writer#write "-e-"; *)
-		
-		(* ctx.generating_fields <- ctx.generating_fields - 1; *)
 		
 		
 		
@@ -1208,7 +1158,7 @@ and generateExpression ctx e =
 						| TInst (tc, tp) ->
 							let t = (remapHaxeTypeToSwift ctx false tc.cl_path e.epos) in
 							ctx.writer#write t;
-							if t = "id" then pointer := false;
+							if t = "AnyObject" then pointer := false;
 						| TType _ -> ctx.writer#write "CASTTType--";
 						| TFun _ -> ctx.writer#write "CASTTFun";
 						| TAnon _ -> ctx.writer#write "CASTTAnon";
@@ -1309,21 +1259,14 @@ and generateExpression ctx e =
 		(* generateFieldAccess ctx e1.etype (field_name s); *)
 		ctx.writer#write ("-fa8-"^(field_name s));
 	| TField (e,fa) ->
-		ctx.generating_fields <- ctx.generating_fields + 1;
 		(match fa with
 		| FInstance (tc,tcf) -> (* ctx.writer#write ("-FInstance-"); *)(* ^(remapKeyword (field_name fa))); *)
-			(* if ctx.generating_calls = 0 then ctx.generating_property_access <- true; *)
 			generateValue ctx e;
 			let f_prefix = (match tcf.cf_type with
 				| TFun _ -> if ctx.generating_left_side_of_operator && not ctx.evaluating_condition then "hx_dyn_" else "";
 				| _ -> "";
 			) in
 			ctx.writer#write (f_prefix^"."^(remapKeyword (field_name fa)));
-			(* let fan = if (ctx.generating_self_access && ctx.generating_calls>0 && ctx.generating_fields>=2) then "." 
-			else if (not ctx.generating_self_access && ctx.generating_calls>0) then " "
-			else if (ctx.generating_self_access && ctx.generating_calls>0) then " " else "." in
-			ctx.writer#write (fan^(if ctx.generating_custom_selector then "" else f_prefix^(remapKeyword (field_name fa))));
-			ctx.generating_property_access <- false; *)
 			
 		| FStatic (cls, cls_f) -> (* ctx.writer#write "-FStatic-"; *)
 			(match cls_f.cf_type with
@@ -1385,11 +1328,11 @@ and generateExpression ctx e =
 				(* TODO: generate functions with arguments as selector. currently does not support arguments *)
 				ctx.writer#write (remapKeyword name);
 			end else begin
-				if ctx.generating_calls = 0 then ctx.writer#write "[";
+				ctx.writer#write "(";
 				generateValue ctx e;
 				(* generateFieldAccess ctx e.etype name; *)
 				ctx.writer#write (" "^(remapKeyword name));
-				if ctx.generating_calls = 0 then ctx.writer#write "]";
+				ctx.writer#write ")";
 			end
 		| FClosure (_,fa2) -> (* ctx.writer#write "-FClosure-"; *)
 			
@@ -1454,26 +1397,18 @@ and generateExpression ctx e =
 			generateValue ctx e;
 			ctx.writer#write (field_name fa)
 		);
-		ctx.generating_fields <- ctx.generating_fields - 1;
 		
 	| TEnumParameter (expr,_,i) -> ctx.writer#write "TODO: TEnumParameter";
 	| TTypeExpr t ->
-		(* ctx.writer#write (Printf.sprintf "%d" ctx.generating_calls); *)
 		let p = t_path t in
-		(* if ctx.generating_calls = 0 then begin *)
-			(match t with
-			| TClassDecl c -> (* ctx.writer#write "TClassDecl";  *)
-				(* if ctx.generating_c_call then ctx.writer#write "-is-c-call-"
-				else if not ctx.generating_c_call then ctx.writer#write "-not-c-call-"; *)
-				if not ctx.generating_c_call then ctx.writer#write (remapHaxeTypeToSwift ctx true p e.epos);
-				ctx.imports_manager#add_class c;
-			| TEnumDecl e -> ();(* ctx.writer#write "TEnumDecl"; (* of tenum *) *)
-			(* TODO: consider the fakeEnum *)
-			| TTypeDecl d -> ctx.writer#write " TTypeDecl "; (* of tdef *)
-			| TAbstractDecl a -> ctx.writer#write " TAbstractDecl "); (* of tabstract *)
-		(* end; *)
-		ctx.generating_c_call <- false;
-		(* ctx.imports_manager#add_class_path p; *)
+		(match t with
+		| TClassDecl c -> (* ctx.writer#write "TClassDecl";  *)
+			ctx.writer#write (remapHaxeTypeToSwift ctx true p e.epos);
+			ctx.imports_manager#add_class c;
+		| TEnumDecl e -> ();(* ctx.writer#write "TEnumDecl"; (* of tenum *) *)
+		(* TODO: consider the fakeEnum *)
+		| TTypeDecl d -> ctx.writer#write " TTypeDecl "; (* of tdef *)
+		| TAbstractDecl a -> ctx.writer#write " TAbstractDecl "); (* of tabstract *)
 	| TParenthesis e ->
 		ctx.writer#write " (";
 		generateValue ctx e;
@@ -1523,12 +1458,7 @@ and generateExpression ctx e =
 			ctx.writer#begin_block;
 			ctx.writer#new_line;
 		end;
-		if ctx.generating_constructor then begin
-			ctx.writer#write "super.init()";
-			ctx.writer#new_line;
-			(* ctx.writer#write "me = self;";
-			ctx.writer#new_line *)
-		end;
+		
 		if Hashtbl.length ctx.function_arguments > 0 then begin
 			ctx.writer#write "// Optional arguments";
 			ctx.writer#new_line;
@@ -1555,10 +1485,6 @@ and generateExpression ctx e =
 				generateExpression ctx e;
 				ctx.writer#terminate_line;
 			);
-			(* After each new line reset the state of  *)
-			ctx.generating_calls <- 0;
-			ctx.generating_fields <- 0;
-			(* ctx.generating_self_access <- false; *)
 		) expr_list;
 		if ctx.generating_constructor then begin
 			ctx.writer#write "super.init()";
@@ -1603,12 +1529,6 @@ and generateExpression ctx e =
 		| [{ eexpr = TConst (TString code) }] -> ctx.writer#write code;
 		| _ -> error "__swift__ accepts only one string as an argument" func.epos)
 	| TCall (func, arg_list) ->
-		(match func.eexpr with
-		| TField (e,fa) ->
-			(match fa with
-			| FStatic (cls,cf) -> ctx.generating_c_call <- (Meta.has Meta.C cf.cf_meta) || (cls.cl_path = ([], "Math"));
-			| _ -> ());
-		| _ -> ());
 		generateCall ctx func arg_list;
 	| TObjectDecl (
 		("fileName" , { eexpr = (TConst (TString file)) }) ::
@@ -1715,17 +1635,12 @@ and generateExpression ctx e =
 				(* ctx.imports_manager#add_class_path c.cl_module.m_path; *)
 				ctx.imports_manager#add_class c;
 				let inited = ref true in
-				if ctx.generating_calls > 0 then begin
-					inited := false;
-					ctx.writer#write (Printf.sprintf "%s" (remapHaxeTypeToSwift ctx false c.cl_path c.cl_pos))
-				end else
-					ctx.writer#write (Printf.sprintf "%s()" (remapHaxeTypeToSwift ctx false c.cl_path c.cl_pos));
+				ctx.writer#write (Printf.sprintf "%s()" (remapHaxeTypeToSwift ctx false c.cl_path c.cl_pos));
 				(* (match c.cl_path with
 					| (["ios";"ui"],"UIImageView") -> ctx.writer#write (Printf.sprintf "[%s alloc]" (remapHaxeTypeToSwift ctx false c.cl_path c.cl_pos)); inited := false;
 					| _ -> ctx.writer#write (Printf.sprintf "[[%s alloc] init" (remapHaxeTypeToSwift ctx false c.cl_path c.cl_pos));
 				); *)
 				if List.length el > 0 then begin
-					ctx.generating_calls <- ctx.generating_calls + 1;
 					(match c.cl_constructor with
 					| None -> ();
 					| Some cf ->
@@ -1744,10 +1659,8 @@ and generateExpression ctx e =
 								index := !index + 1;
 							) args;
 						| _ -> ctx.writer#write " \"-dynamic_arguments_constructor-\" "));
-						
-					ctx.generating_calls <- ctx.generating_calls - 1;
 				end;
-				if !inited then ctx.writer#write "]";
+				(* if !inited then ctx.writer#write "]"; *)
 		)
 	| TIf (cond,e,eelse) ->
 		ctx.evaluating_condition <- true;
@@ -1945,7 +1858,7 @@ and generateValue ctx e =
 				
 				ctx.writer#begin_block;
 				ctx.writer#new_line;
-				ctx.writer#write (Printf.sprintf "%s* %s" t r.v_name);
+				ctx.writer#write (Printf.sprintf "var %s :%s" r.v_name t);
 				ctx.writer#end_block;
 				
 				ctx.writer#new_line;
@@ -3122,13 +3035,13 @@ let generateClass ctx files_manager imports_manager =
 	end;
 	
 	(* Import frameworks *)
-	ctx.writer#new_line;
+	(* ctx.writer#new_line; *)
 	ctx.writer#write_frameworks_imports imports_manager#get_class_frameworks;
-	ctx.writer#new_line;
+	(* ctx.writer#new_line; *)
 	(* Import classes *)
 	imports_manager#remove_class_path ctx.class_def.cl_path;
-	ctx.writer#write_headers_imports ctx.class_def.cl_module.m_path imports_manager#get_imports;
-	ctx.writer#write_headers_imports_custom imports_manager#get_imports_custom;
+	(* ctx.writer#write_headers_imports ctx.class_def.cl_module.m_path imports_manager#get_imports; *)
+	(* ctx.writer#write_headers_imports_custom imports_manager#get_imports_custom; *)
 	ctx.writer#new_line;
 	
 	
@@ -3142,7 +3055,7 @@ let generateClass ctx files_manager imports_manager =
 	let class_path = ctx.class_def.cl_path in
 	if ctx.is_extension then begin
 		let category_class = getFirstMetaValue Meta.Extension ctx.class_def.cl_meta in
-		ctx.writer#write ("extension " ^ category_class ^ " ( " ^ (snd class_path) ^ " )");
+		ctx.writer#write ("extension " ^ category_class ^ " ");
 	end else if ctx.is_protocol then begin
 		ctx.writer#write ("protocol " ^ (snd class_path) ^ ":NSObject {");
 	end
@@ -3150,8 +3063,8 @@ let generateClass ctx files_manager imports_manager =
 		ctx.writer#write ("class " ^ (snd ctx.class_def.cl_path));
 		(* Add the super class *)
 		(match ctx.class_def.cl_super with
-			| None -> ctx.writer#write " : NSObject"
-			| Some (csup,_) -> ctx.writer#write (Printf.sprintf " : %s " (snd csup.cl_path)));
+			| None -> ctx.writer#write " "
+			| Some (csup,_) -> ctx.writer#write (Printf.sprintf " : %s" (snd csup.cl_path)));
 		(* ctx.writer#write (Printf.sprintf "\npublic %s%s%s %s " (final c.cl_meta) 
 		(match c.cl_dynamic with None -> "" | Some _ -> if c.cl_interface then "" else "dynamic ") 
 		(if c.cl_interface then "interface" else "class") (snd c.cl_path); *)
@@ -3159,9 +3072,12 @@ let generateClass ctx files_manager imports_manager =
 			(* Add implement classes *)
 			(match ctx.class_def.cl_implements with
 			| [] -> ()
-			| l -> concat ctx ", " (fun (i,_) -> ctx.writer#write (Printf.sprintf "%s" (snd i.cl_path))) l
+			| l -> 
+				ctx.writer#write ", ";
+				concat ctx ", " (fun (i,_) -> ctx.writer#write (Printf.sprintf "%s" (snd i.cl_path))) l
 			);
 		end;
+		ctx.writer#write " ";
 		ctx.writer#begin_block;
 	end;
 	
@@ -3222,7 +3138,7 @@ let generate common_ctx =
 				run_filters gen; *)
 				
 				let module_path = class_def.cl_module.m_path in
-				let class_path = class_def.cl_path in
+				(* let class_path = class_def.cl_path in *)
 				let is_extension = (Meta.has Meta.Extension class_def.cl_meta) in
 				let is_new_module_m = (m.module_path_m != module_path) in
 				(* When we create a new module reset the 'frameworks' and 'imports' that where stored for the previous module *)
@@ -3246,7 +3162,7 @@ let generate common_ctx =
 						
 						(* Import header *)
 						m.ctx_m.writer#write_copy module_path (appName common_ctx);
-						m.ctx_m.writer#write_header_import module_path module_path;
+						(* m.ctx_m.writer#write_header_import module_path module_path; *)
 					end;
 				end;
 				if not class_def.cl_interface then begin
