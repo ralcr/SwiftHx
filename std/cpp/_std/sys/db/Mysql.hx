@@ -1,5 +1,5 @@
 /*
- * Copyright (C)2005-2012 Haxe Foundation
+ * Copyright (C)2005-2015 Haxe Foundation
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -135,7 +135,9 @@ private class MysqlConnection implements sys.db.Connection {
 		if (v == null) {
 			s.add(v);
       }
-      else {
+      else if (Std.is(v,Bool)) {
+				s.add( v ? 1 : 0 );
+			} else {
 			var t:Int = untyped v.__GetType();
 			if( t == 0xff )
 				s.add(v);

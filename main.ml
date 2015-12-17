@@ -1,24 +1,46 @@
 (*
- * Copyright (C)2005-2013 Haxe Foundation
- *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included in
- * all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
- * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+	The Haxe Compiler
+	Copyright (C) 2005-2015  Haxe Foundation
+
+	This program is free software; you can redistribute it and/or
+	modify it under the terms of the GNU General Public License
+	as published by the Free Software Foundation; either version 2
+	of the License, or (at your option) any later version.
+
+	This program is distributed in the hope that it will be useful,
+	but WITHOUT ANY WARRANTY; without even the implied warranty of
+	MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+	GNU General Public License for more details.
+
+	You should have received a copy of the GNU General Public License
+	along with this program; if not, write to the Free Software
+	Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  *)
+
+(*
+	Conventions:
+	- e: expression (typed or untyped)
+	- c: class
+	- en: enum
+	- td: typedef (tdef)
+	- a: abstract
+	- an: anon
+	- tf: tfunc
+	- cf: class_field
+	- ef: enum_field
+	- t: type (t)
+	- ct: complex_type
+	- v: local variable (tvar)
+	- m: module (module_def)
+	- mt: module_type
+	- p: pos
+
+	"param" refers to type parameters
+	"arg" refers to function arguments
+	leading s_ means function returns string
+	trailing l means list (but we also use natural plurals such as "metas")
+	semantic suffixes may be used freely (e.g. e1, e_if, e')
+*)
 
 open Printf
 open Ast
@@ -45,7 +67,7 @@ exception Abort
 exception Completion of string
 
 
-let version = 3200
+let version = 3300
 let version_major = version / 1000
 let version_minor = (version mod 1000) / 100
 let version_revision = (version mod 100)
@@ -71,7 +93,7 @@ let is_debug_run() =
 	try Sys.getenv "HAXEDEBUG" = "1" with _ -> false
 
 let s_version =
-	Printf.sprintf "%d.%d.%d" version_major version_minor version_revision
+	Printf.sprintf "%d.%d.%d%s" version_major version_minor version_revision (match Version.version_extra with None -> "" | Some v -> " " ^ v)
 
 let format msg p =
 	if p = Ast.null_pos then
@@ -97,26 +119,26 @@ let message ctx msg p =
 	ctx.messages <- format msg p :: ctx.messages
 
 let deprecated = [
-	"Class not found : IntIter","IntIter was renamed to IntIterator";
+	"Type not found : IntIter","IntIter was renamed to IntIterator";
 	"EReg has no field customReplace","EReg.customReplace was renamed to EReg.map";
 	"#StringTools has no field isEOF","StringTools.isEOF was renamed to StringTools.isEof";
-	"Class not found : haxe.BaseCode","haxe.BaseCode was moved to haxe.crypto.BaseCode";
-	"Class not found : haxe.Md5","haxe.Md5 was moved to haxe.crypto.Md5";
-	"Class not found : haxe.SHA1","haxe.SHA1 was moved to haxe.crypto.SHA1";
-	"Class not found : Hash","Hash has been removed, use Map instead";
-	"Class not found : IntHash","IntHash has been removed, use Map instead";
-	"Class not found : haxe.FastList","haxe.FastList was moved to haxe.ds.GenericStack";
+	"Type not found : haxe.BaseCode","haxe.BaseCode was moved to haxe.crypto.BaseCode";
+	"Type not found : haxe.Md5","haxe.Md5 was moved to haxe.crypto.Md5";
+	"Type not found : haxe.SHA1","haxe.SHA1 was moved to haxe.crypto.SHA1";
+	"Type not found : Hash","Hash has been removed, use Map instead";
+	"Type not found : IntHash","IntHash has been removed, use Map instead";
+	"Type not found : haxe.FastList","haxe.FastList was moved to haxe.ds.GenericStack";
 	"#Std has no field format","Std.format has been removed, use single quote 'string ${escape}' syntax instead";
 	"Identifier 'EType' is not part of enum haxe.macro.ExprDef","EType has been removed, use EField instead";
 	"Identifier 'CType' is not part of enum haxe.macro.Constant","CType has been removed, use CIdent instead";
-	"Class not found : haxe.rtti.Infos","Use @:rtti instead of implementing haxe.rtti.Infos";
-	"Class not found : haxe.rtti.Generic","Use @:generic instead of implementing haxe.Generic";
-	"Class not found : flash.utils.TypedDictionary","flash.utils.TypedDictionary has been removed, use Map instead";
-	"Class not found : haxe.Stack", "haxe.Stack has been renamed to haxe.CallStack";
-	"Class not found : neko.zip.Reader", "neko.zip.Reader has been removed, use haxe.zip.Reader instead";
-	"Class not found : neko.zip.Writer", "neko.zip.Writer has been removed, use haxe.zip.Writer instead";
-	"Class not found : haxe.Public", "Use @:publicFields instead of implementing or extending haxe.Public";
-	"#Xml has no field createProlog", "Xml.createProlog was renamed to Xml.createProcessingInstruction";
+	"Type not found : haxe.rtti.Infos","Use @:rtti instead of implementing haxe.rtti.Infos";
+	"Type not found : haxe.rtti.Generic","Use @:generic instead of implementing haxe.Generic";
+	"Type not found : flash.utils.TypedDictionary","flash.utils.TypedDictionary has been removed, use Map instead";
+	"Type not found : haxe.Stack", "haxe.Stack has been renamed to haxe.CallStack";
+	"Type not found : neko.zip.Reader", "neko.zip.Reader has been removed, use haxe.zip.Reader instead";
+	"Type not found : neko.zip.Writer", "neko.zip.Writer has been removed, use haxe.zip.Writer instead";
+	"Type not found : haxe.Public", "Use @:publicFields instead of implementing or extending haxe.Public";
+	"#Xml has no field createProlog", "Xml.createProlog was renamed to Xml.createProcessingInstruction"
 ]
 
 let limit_string s offset =
@@ -143,16 +165,28 @@ let htmlescape s =
 	s
 
 let reserved_flags = [
-	"cross";"flash8";"js";"neko";"flash";"php";"cpp";"cs";"java";"swift";
+	"cross";"js";"neko";"flash";"php";"cpp";"cs";"java";"python";"objc";
 	"as3";"swc";"macro";"sys"
 	]
 
-let complete_fields fields =
+let complete_fields com fields =
 	let b = Buffer.create 0 in
+	let details = Common.raw_defined com "display-details" in
 	Buffer.add_string b "<list>\n";
-	List.iter (fun (n,t,d) ->
-		Buffer.add_string b (Printf.sprintf "<i n=\"%s\"><t>%s</t><d>%s</d></i>\n" n (htmlescape t) (htmlescape d))
-	) (List.sort (fun (a,_,_) (b,_,_) -> compare a b) fields);
+	List.iter (fun (n,t,k,d) ->
+		let s_kind = match k with
+			| Some k -> (match k with
+				| Typer.FKVar -> "var"
+				| Typer.FKMethod -> "method"
+				| Typer.FKType -> "type"
+				| Typer.FKPackage -> "package")
+			| None -> ""
+		in
+		if details then
+			Buffer.add_string b (Printf.sprintf "<i n=\"%s\" k=\"%s\"><t>%s</t><d>%s</d></i>\n" n s_kind (htmlescape t) (htmlescape d))
+		else
+			Buffer.add_string b (Printf.sprintf "<i n=\"%s\"><t>%s</t><d>%s</d></i>\n" n (htmlescape t) (htmlescape d))
+	) (List.sort (fun (a,_,ak,_) (b,_,bk,_) -> compare (ak,a) (bk,b)) fields);
 	Buffer.add_string b "</list>\n";
 	raise (Completion (Buffer.contents b))
 
@@ -167,40 +201,48 @@ let report_times print =
 	end
 
 let make_path f =
-	let f = String.concat "/" (ExtString.String.nsplit f "\\") in
-	let cl = ExtString.String.nsplit f "." in
-	let cl = (match List.rev cl with
-		| ["hx";path] -> ExtString.String.nsplit path "/"
-		| _ -> cl
-	) in
-	let error() =
-		let msg = "Could not process argument " ^ f in
-		let msg = msg ^ "\n" ^
-			if String.length f == 0 then
-				"Class name must not be empty"
-			else match (List.hd (List.rev cl)).[0] with
-				| 'A'..'Z' -> "Invalid class name"
-				| _ -> "Class name must start with uppercase character"
-		in
+	let cl = get_path_parts f in
+	let error msg =
+		let msg = "Could not process argument " ^ f ^ "\n" ^ msg in
 		failwith msg
 	in
 	let invalid_char x =
 		for i = 1 to String.length x - 1 do
 			match x.[i] with
 			| 'A'..'Z' | 'a'..'z' | '0'..'9' | '_' -> ()
-			| _ -> error()
-		done;
-		false
+			| c -> error ("invalid character: " ^ (String.make 1 c))
+		done
 	in
 	let rec loop = function
-		| [] -> error()
-		| [x] -> if String.length x = 0 || not (x.[0] = '_' || (x.[0] >= 'A' && x.[0] <= 'Z')) || invalid_char x then error() else [] , x
+		| [] ->
+			error "empty part"
+		| [x] ->
+			invalid_char x;
+			[],x
 		| x :: l ->
-			if String.length x = 0 || x.[0] < 'a' || x.[0] > 'z' || invalid_char x then error() else
-				let path , name = loop l in
-				x :: path , name
+			if String.length x = 0 then
+				error "empty part"
+			else if x.[0] < 'a' || x.[0] > 'z' then
+				error "Package name must start with a lower case character";
+			invalid_char x;
+			let path,name = loop l in
+			x :: path,name
 	in
 	loop cl
+
+let starts_uppercase x =
+	x.[0] = '_' || (x.[0] >= 'A' && x.[0] <= 'Z')
+
+let check_uppercase x =
+	if String.length x = 0 then
+		failwith "empty part"
+	else if not (starts_uppercase x) then
+		failwith "Class name must start with uppercase character"
+
+let make_type_path f =
+	let pack,name = make_path f in
+	check_uppercase name;
+	pack,name
 
 let unique l =
 	let rec _unique = function
@@ -262,30 +304,30 @@ let rec read_type_path com p =
 			loop path p
 		) (extract());
 	) com.swf_libs;
-  List.iter (fun (path,std,close,all_files,lookup) ->
-    List.iter (fun (path, name) ->
-      if path = p then classes := name :: !classes else
-      let rec loop p1 p2 =
-        match p1, p2 with
-        | [], _ -> ()
-        | x :: _, [] -> packages := x :: !packages
-        | a :: p1, b :: p2 -> if a = b then loop p1 p2
-      in
-      loop path p
-    ) (all_files())
-  ) com.java_libs;
-  List.iter (fun (path,std,all_files,lookup) ->
-    List.iter (fun (path, name) ->
-      if path = p then classes := name :: !classes else
-      let rec loop p1 p2 =
-        match p1, p2 with
-        | [], _ -> ()
-        | x :: _, [] -> packages := x :: !packages
-        | a :: p1, b :: p2 -> if a = b then loop p1 p2
-      in
-      loop path p
-    ) (all_files())
-  ) com.net_libs;
+	List.iter (fun (path,std,close,all_files,lookup) ->
+		List.iter (fun (path, name) ->
+			if path = p then classes := name :: !classes else
+			let rec loop p1 p2 =
+				match p1, p2 with
+				| [], _ -> ()
+				| x :: _, [] -> packages := x :: !packages
+				| a :: p1, b :: p2 -> if a = b then loop p1 p2
+			in
+			loop path p
+		) (all_files())
+	) com.java_libs;
+	List.iter (fun (path,std,all_files,lookup) ->
+		List.iter (fun (path, name) ->
+			if path = p then classes := name :: !classes else
+			let rec loop p1 p2 =
+				match p1, p2 with
+				| [], _ -> ()
+				| x :: _, [] -> packages := x :: !packages
+				| a :: p1, b :: p2 -> if a = b then loop p1 p2
+			in
+		loop path p
+		) (all_files())
+	) com.net_libs;
 	unique !packages, unique !classes
 
 let delete_file f = try Sys.remove f with _ -> ()
@@ -325,7 +367,7 @@ let parse_hxml_data data =
 	) lines)
 
 let parse_hxml file =
-	let ch = IO.input_channel (try open_in_bin file with _ -> failwith ("File not found " ^ file)) in
+	let ch = IO.input_channel (try open_in_bin file with _ -> raise Not_found) in
 	let data = IO.read_all ch in
 	IO.close_in ch;
 	parse_hxml_data data
@@ -340,7 +382,7 @@ let lookup_classes com spath =
 			if clen < String.length spath && String.sub spath 0 clen = c then begin
 				let path = String.sub spath clen (String.length spath - clen) in
 				(try
-					let path = make_path path in
+					let path = make_type_path path in
 					(match loop l with
 					| [x] when String.length (Ast.s_type_path x) < String.length (Ast.s_type_path path) -> [x]
 					| _ -> [path])
@@ -609,8 +651,8 @@ let rec process_params create pl =
 			loop [] l
 		| "--cwd" :: dir :: l ->
 			(* we need to change it immediately since it will affect hxml loading *)
-			(try Unix.chdir dir with _ -> ());
-			loop (dir :: "--cwd" :: acc) l
+			(try Unix.chdir dir with _ -> raise (Arg.Bad "Invalid directory"));
+			loop acc l
 		| "--connect" :: hp :: l ->
 			(match !global_cache with
 			| None ->
@@ -620,14 +662,16 @@ let rec process_params create pl =
 				(* already connected : skip *)
 				loop acc l)
 		| "--run" :: cl :: args ->
-			let acc = (cl ^ ".main()") :: "--macro" :: acc in
+			let acc = cl :: "-main" :: "--interp" :: acc in
 			let ctx = create (!each_params @ (List.rev acc)) in
 			ctx.com.sys_args <- args;
 			init ctx;
 			ctx.flush()
 		| arg :: l ->
 			match List.rev (ExtString.String.nsplit arg ".") with
-			| "hxml" :: _ when (match acc with "-cmd" :: _ -> false | _ -> true) -> loop acc (parse_hxml arg @ l)
+			| "hxml" :: _ when (match acc with "-cmd" :: _ -> false | _ -> true) ->
+				let acc, l = (try acc, parse_hxml arg @ l with Not_found -> (arg ^ " (file not found)") :: acc, l) in
+				loop acc l
 			| _ -> loop (arg :: acc) l
 	in
 	(* put --display in front if it was last parameter *)
@@ -676,7 +720,10 @@ and wait_loop boot_com host port =
 		Hashtbl.replace cache.c_modules (m.m_path,m.m_extra.m_sign) m;
 	in
 	let check_module_path com m p =
-		m.m_extra.m_file = Common.unique_full_path (Typeload.resolve_module_file com m.m_path (ref[]) p)
+		if m.m_extra.m_file <> Common.unique_full_path (Typeload.resolve_module_file com m.m_path (ref[]) p) then begin
+			if verbose then print_endline ("Module path " ^ s_type_path m.m_path ^ " has been changed");
+			raise Not_found;
+		end
 	in
 	let compilation_step = ref 0 in
 	let compilation_mark = ref 0 in
@@ -699,13 +746,35 @@ and wait_loop boot_com host port =
 				if m.m_extra.m_mark <= start_mark then begin
 					(match m.m_extra.m_kind with
 					| MFake | MSub -> () (* don't get classpath *)
-					| MCode -> if not (check_module_path com2 m p) then raise Not_found;
-					| MMacro when ctx.Typecore.in_macro -> if not (check_module_path com2 m p) then raise Not_found;
+					| MExtern ->
+						(* if we have a file then this will override our extern type *)
+						let has_file = (try ignore(Typeload.resolve_module_file com2 m.m_path (ref[]) p); true with Not_found -> false) in
+						if has_file then begin
+							if verbose then print_endline ("A file is masking the library file " ^ s_type_path m.m_path);
+							raise Not_found;
+						end;
+						let rec loop = function
+							| [] ->
+								if verbose then print_endline ("No library file was found for " ^ s_type_path m.m_path);
+								raise Not_found (* no extern registration *)
+							| load :: l ->
+								match load m.m_path p with
+								| None -> loop l
+								| Some (file,_) ->
+									if Common.unique_full_path file <> m.m_extra.m_file then begin
+										if verbose then print_endline ("Library file was changed for " ^ s_type_path m.m_path);
+										raise Not_found;
+									end
+						in
+						loop com2.load_extern_type
+					| MCode -> check_module_path com2 m p
+					| MMacro when ctx.Typecore.in_macro -> check_module_path com2 m p
 					| MMacro ->
 						let _, mctx = Typer.get_macro_context ctx p in
-						if not (check_module_path mctx.Typecore.com m p) then raise Not_found;
+						check_module_path mctx.Typecore.com m p
 					);
 					if file_time m.m_extra.m_file <> m.m_extra.m_time then begin
+						if verbose then print_endline ("File " ^ m.m_extra.m_file ^ (if m.m_extra.m_time = -1. then " not cached (macro-in-macro)" else " has been modified"));
 						if m.m_extra.m_kind = MFake then Hashtbl.remove Typecore.fake_modules m.m_extra.m_file;
 						raise Not_found;
 					end;
@@ -722,7 +791,7 @@ and wait_loop boot_com host port =
 				(match m0.m_extra.m_kind, m.m_extra.m_kind with
 				| MCode, MMacro | MMacro, MCode ->
 					(* this was just a dependency to check : do not add to the context *)
-					()
+					PMap.iter (Hashtbl.replace com2.resources) m.m_extra.m_binded_res;
 				| _ ->
 					if verbose then print_endline ("Reusing  cached module " ^ Ast.s_type_path m.m_path);
 					m.m_extra.m_added <- !compilation_step;
@@ -743,7 +812,7 @@ and wait_loop boot_com host port =
 						| _ -> ()
 					) m.m_types;
 					if m.m_extra.m_kind <> MSub then Typeload.add_module ctx m p;
-					PMap.iter (Hashtbl.add com2.resources) m.m_extra.m_binded_res;
+					PMap.iter (Hashtbl.replace com2.resources) m.m_extra.m_binded_res;
 					PMap.iter (fun _ m2 -> add_modules m0 m2) m.m_extra.m_deps);
 					List.iter (Typer.call_init_macro ctx) m.m_extra.m_macro_calls
 			end
@@ -911,8 +980,8 @@ and do_connect host port args =
 
 and init ctx =
 	let usage = Printf.sprintf
-		"Haxe Compiler %s %s- (C)2005-2014 Haxe Foundation\n Usage : haxe%s -main <class> [-swf|-js|-neko|-php|-cpp|-as3] <output> [options]\n Options :"
-		s_version (match Version.version_extra with None -> "" | Some v -> v) (if Sys.os_type = "Win32" then ".exe" else "")
+		"Haxe Compiler %s - (C)2005-2015 Haxe Foundation\n Usage : haxe%s -main <class> [-swf|-js|-neko|-php|-cpp|-as3|-cs|-java|-python] <output> [options]\n Options :"
+		s_version (if Sys.os_type = "Win32" then ".exe" else "")
 	in
 	let com = ctx.com in
 	let classes = ref [([],"Std")] in
@@ -929,8 +998,9 @@ try
 	let pre_compilation = ref [] in
 	let interp = ref false in
 	let swf_version = ref false in
+	let evals = ref [] in
 	Common.define_value com Define.HaxeVer (float_repres (float_of_int version /. 1000.));
-	Common.define_value com Define.HxcppApiLevel "312";
+	Common.define_value com Define.HxcppApiLevel "321";
 	Common.raw_define com "haxe3";
 	Common.define_value com Define.Dce "std";
 	com.warning <- (fun msg p -> message ctx ("Warning : " ^ msg) p);
@@ -949,13 +1019,13 @@ try
 			| l ->
 				l
 		in
-		let parts = "" :: Str.split_delim (Str.regexp "[;:]") p in
-		com.class_path <- List.map normalize_path (loop parts)
+		let parts = Str.split_delim (Str.regexp "[;:]") p in
+		com.class_path <- "" :: List.map normalize_path (loop parts)
 	with
 		Not_found ->
 			if Sys.os_type = "Unix" then
 				com.class_path <- ["/Users/Cristi/Documents/haxecompiler/haxe/std/";"";"/"]
-				(* com.class_path <- ["/usr/lib/haxe/std/";"/usr/local/lib/haxe/std/";"/usr/lib/haxe/extraLibs/";"/usr/local/lib/haxe/extraLibs/";""] *)
+				(* com.class_path <- ["/usr/lib/haxe/std/";"/usr/share/haxe/std/";"/usr/local/lib/haxe/std/";"/usr/lib/haxe/extraLibs/";"/usr/local/lib/haxe/extraLibs/";""] *)
 			else
 				let base_path = normalize_path (get_real_path (try executable_path() with _ -> "./")) in
 				com.class_path <- [base_path ^ "std/";base_path ^ "extraLibs/";""]);
@@ -964,7 +1034,7 @@ try
 		if com.platform <> Cross then failwith "Multiple targets";
 		Common.init_platform com pf;
 		com.file <- file;
-		if (pf = Flash8 || pf = Flash) && file_extension file = "swc" then Common.define com Define.Swc;
+		if (pf = Flash) && file_extension file = "swc" then Common.define com Define.Swc;
 	in
 	let define f = Arg.Unit (fun () -> Common.define com f) in
 	let process_ref = ref (fun args -> ()) in
@@ -977,6 +1047,7 @@ try
 		| [] -> ()
 		| args -> (!process_ref) args
 	in
+	let arg_delays = ref [] in
 	let basic_args_spec = [
 		("-cp",Arg.String (fun path ->
 			process_libs();
@@ -997,7 +1068,7 @@ try
 		("-cpp",Arg.String (fun dir ->
 			set_platform Cpp dir;
 		),"<directory> : generate C++ code into target directory");
- 		("-cs",Arg.String (fun dir ->
+		("-cs",Arg.String (fun dir ->
 			cp_libs := "hxcs" :: !cp_libs;
 			set_platform Cs dir;
 		),"<directory> : generate C# code into target directory");
@@ -1005,10 +1076,10 @@ try
 			cp_libs := "hxjava" :: !cp_libs;
 			set_platform Java dir;
 		),"<directory> : generate Java code into target directory");
-		("-swift",Arg.String (fun dir ->
+		("-objc",Arg.String (fun dir ->
 			cp_libs := "hxcocoa" :: !cp_libs;
-			set_platform Swift dir;
-		),"<directory> : generate Swift code into target directory");
+			set_platform Objc dir;
+		),"<directory> : generate Objc code into target directory");
 		("-python",Arg.String (fun dir ->
 			set_platform Python dir;
 		),"<file> : generate Python code as target file");
@@ -1018,7 +1089,7 @@ try
 		),"<file> : generate XML types description");
 		("-main",Arg.String (fun cl ->
 			if com.main_class <> None then raise (Arg.Bad "Multiple -main");
-			let cpath = make_path cl in
+			let cpath = make_type_path cl in
 			com.main_class <- Some cpath;
 			classes := cpath :: !classes
 		),"<class> : select startup class");
@@ -1033,7 +1104,7 @@ try
 				| _ -> 	if List.mem var reserved_flags then raise (Arg.Bad (var ^ " is a reserved compiler flag and cannot be defined from command line"));
 			end;
 			Common.raw_define com var;
-		),"<var> : define a conditional compilation flag");
+		),"<var[=value]> : define a conditional compilation flag");
 		("-v",Arg.Unit (fun () ->
 			com.verbose <- true
 		),": turn on verbose mode");
@@ -1048,7 +1119,7 @@ try
 			| "std" | "full" | "no" -> ()
 			| _ -> raise (Arg.Bad "Invalid DCE mode, expected std | full | no"));
 			Common.define_value com Define.Dce mode
-		),"[std|full|no] : set the dead code elimination mode");
+		),"[std|full|no] : set the dead code elimination mode (default std)");
 		("-swf-version",Arg.Float (fun v ->
 			if not !swf_version || com.flash_version < v then com.flash_version <- v;
 			swf_version := true;
@@ -1073,7 +1144,8 @@ try
 			Genswf.add_swf_lib com file true
 		),"<file> : use the SWF library for type checking");
 		("-java-lib",Arg.String (fun file ->
-			Genjava.add_java_lib com file false
+			let std = file = "lib/hxjava-std.jar" in
+			arg_delays := (fun () -> Genjava.add_java_lib com file std) :: !arg_delays;
 		),"<file> : add an external JAR or class directory library");
 		("-net-lib",Arg.String (fun file ->
 			let file, is_std = match ExtString.String.nsplit file "@" with
@@ -1083,16 +1155,19 @@ try
 					file,true
 				| _ -> raise Exit
 			in
-			Gencs.add_net_lib com file is_std
+			arg_delays := (fun () -> Gencs.add_net_lib com file is_std) :: !arg_delays;
 		),"<file>[@std] : add an external .NET DLL file");
 		("-net-std",Arg.String (fun file ->
 			Gencs.add_net_std com file
 		),"<file> : add a root std .NET DLL search path");
+		("-c-arg",Arg.String (fun arg ->
+			com.c_args <- arg :: com.c_args
+		),"<arg> : pass option <arg> to the native Java/C# compiler");
 		("-x", Arg.String (fun file ->
 			let neko_file = file ^ ".n" in
 			set_platform Neko neko_file;
 			if com.main_class = None then begin
-				let cpath = make_path file in
+				let cpath = make_type_path file in
 				com.main_class <- Some cpath;
 				classes := cpath :: !classes
 			end;
@@ -1128,16 +1203,25 @@ try
 				List.iter (fun (_,_,extract) ->
 					Hashtbl.iter (fun n _ -> classes := n :: !classes) (extract())
 				) com.swf_libs;
+				List.iter (fun (_,std,_,all_files,_) ->
+					if not std then
+						List.iter (fun path -> if path <> (["java";"lang"],"String") then classes := path :: !classes) (all_files())
+				) com.java_libs;
+				List.iter (fun (_,std,all_files,_) ->
+					if not std then
+						List.iter (fun path -> classes := path :: !classes) (all_files())
+				) com.net_libs;
 			) :: !pre_compilation;
 			xml_out := Some "hx"
 		),": generate hx headers for all input classes");
 		("--next", Arg.Unit (fun() -> assert false), ": separate several haxe compilations");
+		("--each", Arg.Unit (fun() -> assert false), ": append preceding parameters to all haxe compilations separated by --next");
 		("--display", Arg.String (fun file_pos ->
 			match file_pos with
 			| "classes" ->
-				pre_compilation := (fun() -> raise (Parser.TypePath (["."],None))) :: !pre_compilation;
+				pre_compilation := (fun() -> raise (Parser.TypePath (["."],None,true))) :: !pre_compilation;
 			| "keywords" ->
-				complete_fields (Hashtbl.fold (fun k _ acc -> (k,"","") :: acc) Lexer.keywords [])
+				complete_fields com (Hashtbl.fold (fun k _ acc -> (k,"",None,"") :: acc) Lexer.keywords [])
 			| "memory" ->
 				did_something := true;
 				(try display_memory ctx with e -> prerr_endline (Printexc.get_backtrace ()));
@@ -1156,11 +1240,24 @@ try
 					| "usage" ->
 						activate_special_display_mode();
 						DMUsage
+					| "type" ->
+						activate_special_display_mode();
+						DMType
 					| "toplevel" ->
 						activate_special_display_mode();
 						DMToplevel
-					| _ ->
+					| "" ->
+						Parser.use_parser_resume := true;
 						DMDefault
+					| _ ->
+						let smode,arg = try ExtString.String.split smode "@" with _ -> pos,"" in
+						match smode with
+							| "resolve" ->
+								activate_special_display_mode();
+								DMResolve arg
+							| _ ->
+								Parser.use_parser_resume := true;
+								DMDefault
 				in
 				let pos = try int_of_string pos with _ -> failwith ("Invalid format : "  ^ pos) in
 				com.display <- mode;
@@ -1185,51 +1282,51 @@ try
 			com.php_front <- Some f;
 		),"<filename> : select the name for the php front file");
 		("--php-lib",Arg.String (fun f ->
- 			if com.php_lib <> None then raise (Arg.Bad "Multiple --php-lib");
- 			com.php_lib <- Some f;
- 		),"<filename> : select the name for the php lib folder");
+			if com.php_lib <> None then raise (Arg.Bad "Multiple --php-lib");
+			com.php_lib <- Some f;
+		),"<filename> : select the name for the php lib folder");
 		("--php-prefix", Arg.String (fun f ->
 			if com.php_prefix <> None then raise (Arg.Bad "Multiple --php-prefix");
 			com.php_prefix <- Some f;
 			Common.define com Define.PhpPrefix;
 		),"<name> : prefix all classes with given name");
-		(* Swift related parameters. *)
-		("-swift-platform",Arg.String (fun v ->
-			com.swift_platform <- v;
+		(* Objc related parameters. *)
+		("-objc-platform",Arg.String (fun v ->
+			com.objc_platform <- v;
 		),"<platform> : set the platform. e.g. iphone, ipad, ios, osx, generic");
-		("-swift-version",Arg.Float (fun v ->
-			com.swift_version <- v;
-			(* Common.raw_define com (Printf.sprintf "swift_version=%f.0" v); *)
-			Common.raw_define com "swift_version=5.0";
+		("-objc-version",Arg.Float (fun v ->
+			com.objc_version <- v;
+			(* Common.raw_define com (Printf.sprintf "objc_version=%f.0" v); *)
+			Common.raw_define com "objc_version=5.0";
 		),"<version> : set the cocoa sdk version. e.g. 4-6.1 for iOS, 10.7-10.8 for OSX");
-		("-swift-bundle-version",Arg.Float (fun v ->
-			com.swift_bundle_version <- v;
+		("-objc-bundle-version",Arg.Float (fun v ->
+			com.objc_bundle_version <- v;
 		),"<version> : set the version of the app. e.g. 1.0");
-		("-swift-identifier",Arg.String (fun v ->
-			com.swift_identifier <- Some v;
+		("-objc-identifier",Arg.String (fun v ->
+			com.objc_identifier <- Some v;
 		),"<identifier> : set the identifier for the app. e.g. com.domain.appname");
-		("-swift-owner",Arg.String (fun v ->
-			com.swift_owner <- Some v;
+		("-objc-owner",Arg.String (fun v ->
+			com.objc_owner <- Some v;
 		),"<owner> : set the owner name of the app");
-		("-swift-bundle-name",Arg.String (fun v ->
-			com.swift_bundle_name <- Some v;
+		("-objc-bundle-name",Arg.String (fun v ->
+			com.objc_bundle_name <- Some v;
 		),"<name> : set the name of the executable");
-		("-swift-supporting-files",Arg.String (fun path ->
-			com.swift_supporting_files <- Some (normalize_path path);
+		("-objc-supporting-files",Arg.String (fun path ->
+			com.objc_supporting_files <- Some (normalize_path path);
 		),"<path> : set a custom SupportingFiles folder that contains resources and custom project files.");
-		("-swift-lib",Arg.String (fun path ->
-			com.swift_libs <- path :: com.swift_libs
-		),"<name> : add a linker flag to the app. e.g. Swift");
-		("-swift-framework",Arg.String (fun name ->
-			com.swift_frameworks <- name :: com.swift_frameworks
-		),"<name> : add a linker flag to the app. e.g. Swift");
-		("-swift-linker-flag",Arg.String (fun name ->
-			com.swift_linker_flags <- name :: com.swift_linker_flags
+		("-objc-lib",Arg.String (fun path ->
+			com.objc_libs <- path :: com.objc_libs
+		),"<name> : add a linker flag to the app. e.g. Objc");
+		("-objc-framework",Arg.String (fun name ->
+			com.objc_frameworks <- name :: com.objc_frameworks
+		),"<name> : add a linker flag to the app. e.g. Objc");
+		("-objc-linker-flag",Arg.String (fun name ->
+			com.objc_linker_flags <- name :: com.objc_linker_flags
 		),"<path> : add a custom framework");
 		("-ios-orientation",Arg.String (fun v ->
 			com.ios_orientations <- v :: com.ios_orientations
 		),"<orientation> : add iOS orientations. e.g. UIInterfaceOrientationPortrait");
-		(* Swift ends *)
+		(* Objc ends *)
 		("--remap", Arg.String (fun s ->
 			let pack, target = (try ExtString.String.split s ":" with _ -> raise (Arg.Bad "Invalid remap format, expected source:target")) in
 			com.package_rules <- PMap.add pack (Remap target) com.package_rules;
@@ -1237,13 +1334,16 @@ try
 		("--interp", Arg.Unit (fun() ->
 			Common.define com Define.Interp;
 			set_platform Neko "";
-			no_output := true;
 			interp := true;
 		),": interpret the program using internal macro system");
 		("--macro", Arg.String (fun e ->
 			force_typing := true;
 			config_macros := e :: !config_macros
 		)," : call the given macro before typing anything else");
+		("--eval", Arg.String (fun s ->
+			force_typing := true;
+			evals := s :: !evals;
+		), " : evaluates argument as Haxe module code");
 		("--wait", Arg.String (fun hp ->
 			let host, port = (try ExtString.String.split hp ":" with _ -> "127.0.0.1", hp) in
 			wait_loop com host (try int_of_string port with _ -> raise (Arg.Bad "Invalid port"))
@@ -1252,7 +1352,7 @@ try
 			assert false
 		),"<[host:]port> : connect on the given port and run commands there)");
 		("--cwd", Arg.String (fun dir ->
-			(try Unix.chdir dir with _ -> raise (Arg.Bad "Invalid directory"))
+			assert false
 		),"<dir> : set current working directory");
 		("-version",Arg.Unit (fun() ->
 			message ctx s_version Ast.null_pos;
@@ -1313,12 +1413,21 @@ try
 			did_something := true
 		),": print help for all compiler metadatas");
 	] in
-	let args_callback cl = classes := make_path cl :: !classes in
+	let args_callback cl =
+		let path,name = make_path cl in
+		if starts_uppercase name then
+			classes := (path,name) :: !classes
+		else begin
+			force_typing := true;
+			config_macros := (Printf.sprintf "include('%s')" cl) :: !config_macros;
+		end
+	in
 	let all_args_spec = basic_args_spec @ adv_args_spec in
 	let process args =
 		let current = ref 0 in
-		try
-			Arg.parse_argv ~current (Array.of_list ("" :: List.map expand_env args)) all_args_spec args_callback usage
+		(try
+			Arg.parse_argv ~current (Array.of_list ("" :: List.map expand_env args)) all_args_spec args_callback usage;
+			List.iter (fun fn -> fn()) !arg_delays
 		with (Arg.Bad msg) as exc ->
 			let r = Str.regexp "unknown option `\\([-A-Za-z]+\\)'" in
 			try
@@ -1328,21 +1437,17 @@ try
 				let msg = Typecore.string_error_raise s sl (Printf.sprintf "Invalid command: %s" s) in
 				raise (Arg.Bad msg)
 			with Not_found ->
-				raise exc
+				raise exc);
+		arg_delays := []
 	in
 	process_ref := process;
 	process ctx.com.args;
 	process_libs();
-	(try ignore(Common.find_file com "mt/Include.hx"); Common.raw_define com "mt"; with Not_found -> ());
 	if com.display <> DMNone then begin
 		com.warning <- message ctx;
 		com.error <- error ctx;
 		com.main_class <- None;
 		let real = get_real_path (!Parser.resume_display).Ast.pfile in
-		(* try to fix issue on windows when get_real_path fails (8.3 DOS names disabled) *)
-		let real = (match List.rev (ExtString.String.nsplit real path_sep) with
-		| file :: path when String.length file > 0 && file.[0] >= 'a' && file.[1] <= 'z' -> file.[0] <- char_of_int (int_of_char file.[0] - int_of_char 'a' + int_of_char 'A'); String.concat path_sep (List.rev (file :: path))
-		| _ -> real) in
 		classes := lookup_classes com real;
 		if !classes = [] then begin
 			if not (Sys.file_exists real) then failwith "Display file does not exist";
@@ -1362,33 +1467,25 @@ try
 			(* no platform selected *)
 			set_platform Cross "";
 			"?"
-		| Flash8 | Flash ->
-			if com.flash_version >= 9. then begin
-				let rec loop = function
-					| [] -> ()
-					| (v,_) :: _ when v > com.flash_version -> ()
-					| (v,def) :: l ->
-						Common.raw_define com ("flash" ^ def);
-						loop l
-				in
-				loop Common.flash_versions;
-				Common.raw_define com "flash";
-				com.defines <- PMap.remove "flash8" com.defines;
-				com.package_rules <- PMap.remove "flash" com.package_rules;
-				add_std "flash";
-			end else begin
-				com.package_rules <- PMap.add "flash" (Directory "flash8") com.package_rules;
-				com.package_rules <- PMap.add "flash8" Forbidden com.package_rules;
-				Common.raw_define com "flash";
-				Common.raw_define com ("flash" ^ string_of_int (int_of_float com.flash_version));
-				com.platform <- Flash8;
-				add_std "flash8";
-			end;
+		| Flash ->
+			let rec loop = function
+				| [] -> ()
+				| (v,_) :: _ when v > com.flash_version -> ()
+				| (v,def) :: l ->
+					Common.raw_define com ("flash" ^ def);
+					loop l
+			in
+			loop Common.flash_versions;
+			Common.raw_define com "flash";
+			com.package_rules <- PMap.remove "flash" com.package_rules;
+			add_std "flash";
 			"swf"
 		| Neko ->
 			add_std "neko";
 			"n"
 		| Js ->
+			if not (PMap.exists (fst (Define.infos Define.JqueryVer)) com.defines) then
+				Common.define_value com Define.JqueryVer "11103";
 			add_std "js";
 			"js"
 		| Php ->
@@ -1398,30 +1495,36 @@ try
 			add_std "cpp";
 			"cpp"
 		| Cs ->
+			let old_flush = ctx.flush in
+			ctx.flush <- (fun () ->
+				com.net_libs <- [];
+				old_flush()
+			);
 			Gencs.before_generate com;
 			add_std "cs"; "cs"
 		| Java ->
 			let old_flush = ctx.flush in
 			ctx.flush <- (fun () ->
 				List.iter (fun (_,_,close,_,_) -> close()) com.java_libs;
+				com.java_libs <- [];
 				old_flush()
 			);
 			Genjava.before_generate com;
 			add_std "java"; "java"
-		| Swift ->
+		| Objc ->
 			let rec loop = function
 				| [] -> ()
 				| (v,def) :: l ->
-					if v >= com.swift_version then begin
+					if v >= com.objc_version then begin
 						print_endline ("-> define flag: ios" ^ def);
 						Common.raw_define com ("ios" ^ def);
 					end;
 					loop l
 			in
-			loop Common.swift_ios_versions;
+			loop Common.objc_ios_versions;
 			Common.raw_define com "ios";
-			add_std "swift";
-			"swift"
+			add_std "objc";
+			"objc"
 		| Python ->
 			add_std "python";
 			"python"
@@ -1435,9 +1538,6 @@ try
 	end;
 	com.config <- get_config com; (* make sure to adapt all flags changes defined after platform *)
 
-	(* check file extension. In case of wrong commandline, we don't want
-		to accidentaly delete a source file. *)
-	if not !no_output && file_extension com.file = ext then delete_file com.file;
 	List.iter (fun f -> f()) (List.rev (!pre_compilation));
 	if !classes = [([],"Std")] && not !force_typing then begin
 		let help_spec = basic_args_spec @ [
@@ -1451,17 +1551,18 @@ try
 	end else begin
 		ctx.setup();
 		Common.log com ("Classpath : " ^ (String.concat ";" com.class_path));
-		Common.log com ("Defines : " ^ (String.concat ";" (PMap.foldi (fun v _ acc -> v :: acc) com.defines [])));
+		Common.log com ("Defines : " ^ (String.concat ";" (PMap.foldi (fun k v acc -> (match v with "1" -> k | _ -> k ^ "=" ^ v) :: acc) com.defines [])));
 		let t = Common.timer "typing" in
 		Typecore.type_expr_ref := (fun ctx e with_type -> Typer.type_expr ctx e with_type);
 		let tctx = Typer.create com in
 		List.iter (Typer.call_init_macro tctx) (List.rev !config_macros);
+		List.iter (Typer.eval tctx) !evals;
 		List.iter (fun cpath -> ignore(tctx.Typecore.g.Typecore.do_load_module tctx cpath Ast.null_pos)) (List.rev !classes);
 		Typer.finalize tctx;
 		t();
 		if ctx.has_error then raise Abort;
 		begin match com.display with
-			| DMNone | DMUsage | DMPosition ->
+			| DMNone | DMUsage | DMPosition | DMType | DMResolve _ ->
 				()
 			| _ ->
 				if ctx.has_next then raise Abort;
@@ -1474,64 +1575,71 @@ try
 		com.modules <- modules;
 		Filters.run com tctx main;
 		if ctx.has_error then raise Abort;
+		(* check file extension. In case of wrong commandline, we don't want
+			to accidentaly delete a source file. *)
+		if not !no_output && file_extension com.file = ext then delete_file com.file;
 		(match !xml_out with
 		| None -> ()
 		| Some "hx" ->
 			Genxml.generate_hx com
 		| Some file ->
 			Common.log com ("Generating xml : " ^ file);
+			Common.mkdir_from_path file;
 			Genxml.generate com file);
-		if com.platform = Java then List.iter (Codegen.promote_abstract_parameters com) com.types;
 		if com.platform = Flash || com.platform = Cpp then List.iter (Codegen.fix_overrides com) com.types;
 		if Common.defined com Define.Dump then Codegen.dump_types com;
 		if Common.defined com Define.DumpDependencies then Codegen.dump_dependencies com;
 		t();
-		(match com.platform with
-		| _ when !no_output ->
+		if not !no_output then begin match com.platform with
+			| Neko when !interp -> ()
+			| Cpp when Common.defined com Define.Cppia -> ()
+			| Cpp | Cs | Java | Php -> Common.mkdir_from_path (com.file ^ "/.")
+			| _ -> Common.mkdir_from_path com.file
+		end;
+		if not !no_output then begin
 			if !interp then begin
 				let ctx = Interp.create com (Typer.make_macro_api tctx Ast.null_pos) in
 				Interp.add_types ctx com.types (fun t -> ());
 				(match com.main with
 				| None -> ()
 				| Some e -> ignore(Interp.eval_expr ctx e));
-			end;
-		| Cross ->
-			()
-		| Flash8 | Flash when Common.defined com Define.As3 ->
-			Common.log com ("Generating AS3 in : " ^ com.file);
-			Genas3.generate com;
-		| Flash8 | Flash ->
-			Common.log com ("Generating swf : " ^ com.file);
-			Genswf.generate com !swf_header;
-		| Neko ->
-			Common.log com ("Generating neko : " ^ com.file);
-			Genneko.generate com;
-		| Js ->
-			Common.log com ("Generating js : " ^ com.file);
-			Genjs.generate com
-		| Php ->
-			Common.log com ("Generating PHP in : " ^ com.file);
-			Genphp.generate com;
-		| Cpp ->
-			Common.log com ("Generating Cpp in : " ^ com.file);
-			Gencpp.generate com;
-		| Cs ->
-			Common.log com ("Generating Cs in : " ^ com.file);
-			Gencs.generate com;
-		| Java ->
-			Common.log com ("Generating Java in : " ^ com.file);
-			Genjava.generate com;
-		| Swift ->
-			Common.log com ("Generating Swift in : " ^ com.file);
-			Genswift.generate com;
-		| Python ->
-			Common.log com ("Generating python in : " ^ com.file);
-			Genpy.generate com;
-		);
+			end else if com.platform = Cross then
+				()
+			else begin
+				let generate,name = match com.platform with
+				| Flash when Common.defined com Define.As3 ->
+					Genas3.generate,"AS3"
+				| Flash ->
+					Genswf.generate !swf_header,"swf"
+				| Neko ->
+					Genneko.generate,"neko"
+				| Js ->
+					Genjs.generate,"js"
+				| Php ->
+					Genphp.generate,"php"
+				| Cpp ->
+					Gencpp.generate,"cpp"
+				| Cs ->
+					Gencs.generate,"cs"
+				| Java ->
+					Genjava.generate,"java"
+				| Python ->
+					Genpy.generate,"python"
+				| Objc ->
+					Genobjc.generate,"objc";
+				| Cross ->
+					assert false
+				in
+				Common.log com ("Generating " ^ name ^ ": " ^ com.file);
+				let t = Common.timer ("generate " ^ name) in
+				generate com;
+				t()
+			end
+		end
 	end;
 	Sys.catch_break false;
+	List.iter (fun f -> f()) (List.rev com.final_filters);
 	if not !no_output then begin
-		List.iter (fun f -> f()) (List.rev com.final_filters);
 		List.iter (fun c ->
 			let r = run_command ctx c in
 			if r <> 0 then failwith ("Command failed with error " ^ string_of_int r)
@@ -1540,6 +1648,8 @@ try
 with
 	| Abort ->
 		()
+	| Ast.Error (m,p) ->
+		error ctx m p
 	| Typecore.Fatal_error (m,p) ->
 		error ctx m p
 	| Common.Abort (m,p) ->
@@ -1572,21 +1682,21 @@ with
 		message ctx msg Ast.null_pos
 	| Typer.DisplayFields fields ->
 		let ctx = print_context() in
-		let fields = List.map (fun (name,t,doc) -> name, s_type ctx t, (match doc with None -> "" | Some d -> d)) fields in
+		let fields = List.map (fun (name,t,kind,doc) -> name, s_type ctx t, kind, (match doc with None -> "" | Some d -> d)) fields in
 		let fields = if !measure_times then begin
 			close_times();
 			let tot = ref 0. in
 			Hashtbl.iter (fun _ t -> tot := !tot +. t.total) Common.htimers;
-			let fields = ("@TOTAL", Printf.sprintf "%.3fs" (get_time() -. !start_time), "") :: fields in
+			let fields = ("@TOTAL", Printf.sprintf "%.3fs" (get_time() -. !start_time), None, "") :: fields in
 			if !tot > 0. then
 				Hashtbl.fold (fun _ t acc ->
-					("@TIME " ^ t.name, Printf.sprintf "%.3fs (%.0f%%)" t.total (t.total *. 100. /. !tot), "") :: acc
+					("@TIME " ^ t.name, Printf.sprintf "%.3fs (%.0f%%)" t.total (t.total *. 100. /. !tot), None, "") :: acc
 				) Common.htimers fields
 			else fields
 		end else
 			fields
 		in
-		complete_fields fields
+		complete_fields com fields
 	| Typecore.DisplayTypes tl ->
 		let ctx = print_context() in
 		let b = Buffer.create 0 in
@@ -1620,24 +1730,31 @@ with
 			| Typer.ITEnum(en,ef) -> Buffer.add_string b (Printf.sprintf "<i k=\"enum\" t=\"%s\">%s</i>\n" (s_type ef.ef_type) ef.ef_name);
 			| Typer.ITGlobal(mt,s,t) -> Buffer.add_string b (Printf.sprintf "<i k=\"global\" p=\"%s\" t=\"%s\">%s</i>\n" (s_type_path (t_infos mt).mt_path) (s_type t) s);
 			| Typer.ITType(mt) -> Buffer.add_string b (Printf.sprintf "<i k=\"type\" p=\"%s\">%s</i>\n" (s_type_path (t_infos mt).mt_path) (snd (t_infos mt).mt_path));
-			| Typer.ITPackage s -> Buffer.add_string b (Printf.sprintf "<i k=\"package\">%s<i>\n" s)
+			| Typer.ITPackage s -> Buffer.add_string b (Printf.sprintf "<i k=\"package\">%s</i>\n" s)
 		) il;
 		Buffer.add_string b "</il>";
 		raise (Completion (Buffer.contents b))
-	| Parser.TypePath (p,c) ->
+	| Parser.TypePath (p,c,is_import) ->
 		(match c with
 		| None ->
 			let packs, classes = read_type_path com p in
 			if packs = [] && classes = [] then
 				error ctx ("No classes found in " ^ String.concat "." p) Ast.null_pos
 			else
-				complete_fields (List.map (fun f -> f,"","") (packs @ classes))
+				complete_fields com (
+					let convert k f = (f,"",Some k,"") in
+					(List.map (convert Typer.FKPackage) packs) @ (List.map (convert Typer.FKType) classes)
+				)
 		| Some (c,cur_package) ->
 			try
+				let sl_pack,s_module = match List.rev p with
+					| s :: sl when s.[0] >= 'A' && s.[0] <= 'Z' -> List.rev sl,s
+					| _ -> p,c
+				in
 				let ctx = Typer.create com in
 				let rec lookup p =
 					try
-						Typeload.load_module ctx (p,c) Ast.null_pos
+						Typeload.load_module ctx (p,s_module) Ast.null_pos
 					with e ->
 						if cur_package then
 							match List.rev p with
@@ -1646,8 +1763,32 @@ with
 						else
 							raise e
 				in
-				let m = lookup p in
-				complete_fields (List.map (fun t -> snd (t_path t),"","") (List.filter (fun t -> not (t_infos t).mt_private) m.m_types))
+				let m = lookup sl_pack in
+				let statics = ref None in
+				let public_types = List.filter (fun t ->
+					let tinfos = t_infos t in
+					let is_module_type = snd tinfos.mt_path = c in
+					if is_import && is_module_type then begin match t with
+						| TClassDecl c ->
+							ignore(c.cl_build());
+							statics := Some c.cl_ordered_statics
+						| _ -> ()
+					end;
+					not tinfos.mt_private
+				) m.m_types in
+				let types = if c <> s_module then [] else List.map (fun t -> snd (t_path t),"",Some Typer.FKType,"") public_types in
+				let ctx = print_context() in
+				let make_field_doc cf =
+					cf.cf_name,
+					s_type ctx cf.cf_type,
+					Some (match cf.cf_kind with Method _ -> Typer.FKMethod | Var _ -> Typer.FKVar),
+					(match cf.cf_doc with Some s -> s | None -> "")
+				in
+				let types = match !statics with
+					| None -> types
+					| Some cfl -> types @ (List.map make_field_doc (List.filter (fun cf -> cf.cf_public) cfl))
+				in
+				complete_fields com types
 			with Completion c ->
 				raise (Completion c)
 			| _ ->

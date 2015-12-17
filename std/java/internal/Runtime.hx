@@ -1,5 +1,5 @@
 /*
- * Copyright (C)2005-2012 Haxe Foundation
+ * Copyright (C)2005-2015 Haxe Foundation
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -406,6 +406,9 @@ package java.internal;
 			{
 				cls[i] = java.lang.Number.class;
 				isNum = hasNumber = true;
+			} else if (o instanceof java.lang.Boolean) {
+				cls[i] = java.lang.Boolean.class;
+				isNum = true;
 			}
 
 			msl = realMsl;
@@ -572,7 +575,7 @@ package java.internal;
 
 	public static function isFinite(v:Float):Bool
 	{
-		return (v == v) && !java.lang.Double._isInfinite(v);
+		return (v == v) && !java.lang.Double.DoubleClass._isInfinite(v);
 	}
 }
 

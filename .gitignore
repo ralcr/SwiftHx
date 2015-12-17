@@ -6,10 +6,13 @@
 *.a
 *.exe
 .*.swp
+/out
 
 /extra/hxclasses
 /extra/*.swf
 /extra/*.swc
+/extra/bintray.json
+/extra/git-archive-all
 
 /version.ml
 /haxe
@@ -41,7 +44,11 @@
 /tests/unit/cs
 /tests/unit/cs_unsafe
 /tests/unit/dump
+<<<<<<< HEAD
 /tests/unit/objc
+=======
+/tests/unit/db.db3
+>>>>>>> upstream/development
 
 /tests/unit/native_java/obj
 /tests/unit/native_java/cmd
@@ -52,6 +59,7 @@
 /tests/unit/native_cs/native_cs.csproj
 /tests/unit/unit.js.map
 /tests/unit/unit.n
+/tests/unit/node_modules/
 
 /haxe.sublime*
 build.bat
@@ -59,9 +67,17 @@ build.bat
 tests/unit/compile.php.hxml
 /extra/*.xml
 tests/optimization/testopt.js
-tests/unit/native_python/__pycache__
+tests/misc/pythonImport/native_python/__pycache__
 tests/unit/unit.py
 tests/unit/unit.py.res1.txt
 tests/unit/unit.py.res2.bin
 *.cmo
 tests/sys/bin/
+tests/optimization/dump/
+tests/misc/projects/*/*.n
+tests/unit/bin/
+tests/*.n
+tests/misc/projects/Issue3756/cpp/
+tests/misc/projects/Issue4070/cpp/
+
+/*.manifest

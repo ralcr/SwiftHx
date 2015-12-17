@@ -1,5 +1,5 @@
 /*
- * Copyright (C)2005-2014 Haxe Foundation
+ * Copyright (C)2005-2015 Haxe Foundation
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -36,8 +36,11 @@ class Rtti {
 
 		If `c` is null, the result is unspecified.
 	**/
-	static public function getRtti<T>(c:Class<T>):Null<Classdef> {
+	static public function getRtti<T>(c:Class<T>):Classdef {
 		var rtti = Reflect.field(c, "__rtti");
+		if (rtti == null) {
+			throw 'Class ${Type.getClassName(c)} has no RTTI information, consider adding @:rtti';
+		}
 		var x = Xml.parse(rtti).firstElement();
 		var infos = new haxe.rtti.XmlParser().processElement(x);
 		switch (infos) {

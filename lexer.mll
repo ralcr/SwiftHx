@@ -1,23 +1,20 @@
 (*
- * Copyright (C)2005-2012 Haxe Foundation
- *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included in
- * all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
- * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+	The Haxe Compiler
+	Copyright (C) 2005-2015  Haxe Foundation
+
+	This program is free software; you can redistribute it and/or
+	modify it under the terms of the GNU General Public License
+	as published by the Free Software Foundation; either version 2
+	of the License, or (at your option) any later version.
+
+	This program is distributed in the hope that it will be useful,
+	but WITHOUT ANY WARRANTY; without even the implied warranty of
+	MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+	GNU General Public License for more details.
+
+	You should have received a copy of the GNU General Public License
+	along with this program; if not, write to the Free Software
+	Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  *)
 
 {
@@ -85,10 +82,10 @@ let keywords =
 		Inline;Using;Null;True;False;Abstract;Macro];
 	h
 
-let init file =
+let init file do_add =
 	let f = make_file file in
 	cur := f;
-	Hashtbl.replace all_files file f
+	if do_add then Hashtbl.replace all_files file f
 
 let save() =
 	!cur
@@ -220,6 +217,7 @@ let invalid_char lexbuf =
 
 let ident = ('_'* ['a'-'z'] ['_' 'a'-'z' 'A'-'Z' '0'-'9']* | '_'+ | '_'+ ['0'-'9'] ['_' 'a'-'z' 'A'-'Z' '0'-'9']* )
 let idtype = '_'* ['A'-'Z'] ['_' 'a'-'z' 'A'-'Z' '0'-'9']*
+let integer = ['1'-'9'] ['0'-'9']* | '0'
 
 rule skip_header = parse
 	| "\239\187\191" { skip_header lexbuf }
@@ -232,12 +230,12 @@ and token = parse
 	| "\r\n" { newline lexbuf; token lexbuf }
 	| '\n' | '\r' { newline lexbuf; token lexbuf }
 	| "0x" ['0'-'9' 'a'-'f' 'A'-'F']+ { mk lexbuf (Const (Int (lexeme lexbuf))) }
-	| ['0'-'9']+ { mk lexbuf (Const (Int (lexeme lexbuf))) }
-	| ['0'-'9']+ '.' ['0'-'9']+ { mk lexbuf (Const (Float (lexeme lexbuf))) }
+	| integer { mk lexbuf (Const (Int (lexeme lexbuf))) }
+	| integer '.' ['0'-'9']+ { mk lexbuf (Const (Float (lexeme lexbuf))) }
 	| '.' ['0'-'9']+ { mk lexbuf (Const (Float (lexeme lexbuf))) }
-	| ['0'-'9']+ ['e' 'E'] ['+' '-']? ['0'-'9']+ { mk lexbuf (Const (Float (lexeme lexbuf))) }
-	| ['0'-'9']+ '.' ['0'-'9']* ['e' 'E'] ['+' '-']? ['0'-'9']+ { mk lexbuf (Const (Float (lexeme lexbuf))) }
-	| ['0'-'9']+ "..." {
+	| integer ['e' 'E'] ['+' '-']? ['0'-'9']+ { mk lexbuf (Const (Float (lexeme lexbuf))) }
+	| integer '.' ['0'-'9']* ['e' 'E'] ['+' '-']? ['0'-'9']+ { mk lexbuf (Const (Float (lexeme lexbuf))) }
+	| integer "..." {
 			let s = lexeme lexbuf in
 			mk lexbuf (IntInterval (String.sub s 0 (String.length s - 3)))
 		}
@@ -257,6 +255,8 @@ and token = parse
 	| "*=" { mk lexbuf (Binop (OpAssignOp OpMult)) }
 	| "/=" { mk lexbuf (Binop (OpAssignOp OpDiv)) }
 	| "<<=" { mk lexbuf (Binop (OpAssignOp OpShl)) }
+	| "||=" { mk lexbuf (Binop (OpAssignOp OpBoolOr)) }
+	| "&&=" { mk lexbuf (Binop (OpAssignOp OpBoolAnd)) }
 (*//| ">>=" { mk lexbuf (Binop (OpAssignOp OpShr)) } *)
 (*//| ">>>=" { mk lexbuf (Binop (OpAssignOp OpUShr)) } *)
 	| "==" { mk lexbuf (Binop OpEq) }
@@ -367,7 +367,7 @@ and string2 = parse
 		string2 lexbuf;
 	}
 	| [^'\'' '\\' '\r' '\n' '$']+ { store lexbuf; string2 lexbuf }
-	
+
 and code_string = parse
 	| eof { raise Exit }
 	| '\n' | '\r' | "\r\n" { newline lexbuf; store lexbuf; code_string lexbuf }

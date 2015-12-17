@@ -24,9 +24,9 @@
  */
 package sys;
 
-import swift.foundation.NSError;
-import swift.foundation.NSFileManager;
-import swift.foundation.NSFileHandle;
+import objc.foundation.NSError;
+import objc.foundation.NSFileManager;
+import objc.foundation.NSFileHandle;
 
 
 private enum FileKind {

@@ -1,3 +1,24 @@
+/*
+ * Copyright (C)2005-2015 Haxe Foundation
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a
+ * copy of this software and associated documentation files (the "Software"),
+ * to deal in the Software without restriction, including without limitation
+ * the rights to use, copy, modify, merge, publish, distribute, sublicense,
+ * and/or sell copies of the Software, and to permit persons to whom the
+ * Software is furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+ * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+ * DEALINGS IN THE SOFTWARE.
+ */
 package python;
 
 #if macro
@@ -6,6 +27,8 @@ import haxe.macro.Context;
 import haxe.macro.ExprTools;
 #end
 
+@:noPackageRestrict
+@:analyzer(no_simplification)
 extern class Syntax {
 
 	#if macro
@@ -16,8 +39,7 @@ extern class Syntax {
 		return macro ($self.pythonCode($v{"import " + module}):Void);
 	}
 
-	@:noUsing macro public static function importAs (module:String, className : String):haxe.macro.Expr
-	{
+	@:noUsing macro public static function importAs (module:String, className : String):haxe.macro.Expr {
 		var n = className.split(".").join("_");
 		var e = "import " + module + " as " + n;
 
@@ -46,7 +68,7 @@ extern class Syntax {
 	@:noUsing
 	macro public static function pythonCode(b:ExprOf<String>, rest:Array<Expr>):Expr {
 		if (rest == null) rest = [];
-		return macro @:pos(Context.currentPos()) $self._pythonCode($b, $a{rest});
+		return macro @:pos(Context.currentPos()) untyped $self._pythonCode($b, $a{rest});
 	};
 
 	#if !macro
@@ -73,26 +95,23 @@ extern class Syntax {
 
 
 	@:noUsing
-	macro public static function foreach <T>(v:Expr, it:Expr, b:Expr):haxe.macro.Expr
-	{
+	macro public static function foreach<T>(v:Expr, it:Expr, b:Expr):haxe.macro.Expr {
 		var id = switch (v.expr) {
-			case EConst(CIdent(x)):x;
+			case EConst(CIdent(x)): x;
 			case _ : Context.error("unexpected " + ExprTools.toString(v) + ": const ident expected", v.pos);
 		}
-		var iter = try {
-			Context.typeof(macro $it.__iter__());
-			macro $it.__iter__().getNativeIteratorRaw();
-		} catch (e:Dynamic) {
-			macro $it.getNativeIteratorRaw();
-		};
 
+		var iter = try {
+			var it = macro ($it.__iter__() : python.NativeIterator.NativeIteratorRaw<T>);
+			Context.typeof(it);
+			it;
+		} catch (e:Dynamic) {
+			macro ($it : python.NativeIterable.NativeIterableRaw<T>);
+		}
 
 		return macro {
-			// the first 2 expressions are only used to create a typing context for the foreach construct
-			// TODO how can we get rid of them, so that they are not generated?
 			var $id = null;
-			if (false) $v = $iter.__next__();
-			$self._foreach($v, $it, $b);
+			$self._foreach($v, $it, cast $b);
 		}
 	}
 

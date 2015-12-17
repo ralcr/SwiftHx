@@ -1,35 +1,33 @@
 (*
- * Copyright (C)2005-2013 Haxe Foundation
- *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included in
- * all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
- * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+	The Haxe Compiler
+	Copyright (C) 2005-2015  Haxe Foundation
+
+	This program is free software; you can redistribute it and/or
+	modify it under the terms of the GNU General Public License
+	as published by the Free Software Foundation; either version 2
+	of the License, or (at your option) any later version.
+
+	This program is distributed in the hope that it will be useful,
+	but WITHOUT ANY WARRANTY; without even the implied warranty of
+	MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+	GNU General Public License for more details.
+
+	You should have received a copy of the GNU General Public License
+	along with this program; if not, write to the Free Software
+	Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  *)
 
 open JData
 open Unix
 open Ast
 open Common
+open Type
 open Gencommon
 open Gencommon.SourceWriter
-open Type
 open Printf
 open Option
 open ExtString
+module SS = Set.Make(String)
 
 let is_boxed_type t = match follow t with
 	| TInst ({ cl_path = (["java";"lang"], "Boolean") }, [])
@@ -39,6 +37,13 @@ let is_boxed_type t = match follow t with
 	| TInst ({ cl_path = (["java";"lang"], "Short") }, [])
 	| TInst ({ cl_path = (["java";"lang"], "Character") }, [])
 	| TInst ({ cl_path = (["java";"lang"], "Float") }, []) -> true
+	| TAbstract ({ a_path = (["java";"lang"], "Boolean") }, [])
+	| TAbstract ({ a_path = (["java";"lang"], "Double") }, [])
+	| TAbstract ({ a_path = (["java";"lang"], "Integer") }, [])
+	| TAbstract ({ a_path = (["java";"lang"], "Byte") }, [])
+	| TAbstract ({ a_path = (["java";"lang"], "Short") }, [])
+	| TAbstract ({ a_path = (["java";"lang"], "Character") }, [])
+	| TAbstract ({ a_path = (["java";"lang"], "Float") }, []) -> true
 	| _ -> false
 
 let unboxed_type gen t tbyte tshort tchar tfloat = match follow t with
@@ -49,11 +54,19 @@ let unboxed_type gen t tbyte tshort tchar tfloat = match follow t with
 	| TInst ({ cl_path = (["java";"lang"], "Short") }, []) -> tshort
 	| TInst ({ cl_path = (["java";"lang"], "Character") }, []) -> tchar
 	| TInst ({ cl_path = (["java";"lang"], "Float") }, []) -> tfloat
+	| TAbstract ({ a_path = (["java";"lang"], "Boolean") }, []) -> gen.gcon.basic.tbool
+	| TAbstract ({ a_path = (["java";"lang"], "Double") }, []) -> gen.gcon.basic.tfloat
+	| TAbstract ({ a_path = (["java";"lang"], "Integer") }, []) -> gen.gcon.basic.tint
+	| TAbstract ({ a_path = (["java";"lang"], "Byte") }, []) -> tbyte
+	| TAbstract ({ a_path = (["java";"lang"], "Short") }, []) -> tshort
+	| TAbstract ({ a_path = (["java";"lang"], "Character") }, []) -> tchar
+	| TAbstract ({ a_path = (["java";"lang"], "Float") }, []) -> tfloat
 	| _ -> assert false
 
 let rec t_has_type_param t = match follow t with
 	| TInst({ cl_kind = KTypeParameter _ }, []) -> true
 	| TEnum(_, params)
+	| TAbstract(_, params)
 	| TInst(_, params) -> List.exists t_has_type_param params
 	| TFun(f,ret) -> t_has_type_param ret || List.exists (fun (_,_,t) -> t_has_type_param t) f
 	| _ -> false
@@ -65,37 +78,51 @@ let is_type_param t = match follow t with
 let rec t_has_type_param_shallow last t = match follow t with
 	| TInst({ cl_kind = KTypeParameter _ }, []) -> true
 	| TEnum(_, params)
+	| TAbstract(_, params)
 	| TInst(_, params) when not last -> List.exists (t_has_type_param_shallow true) params
 	| TFun(f,ret) when not last -> t_has_type_param_shallow true ret	|| List.exists (fun (_,_,t) -> t_has_type_param_shallow true t) f
 	| _ -> false
+
+let rec replace_type_param t = match follow t with
+	| TInst({ cl_kind = KTypeParameter _ }, []) -> t_dynamic
+	| TEnum(e, params) -> TEnum(e, List.map replace_type_param params)
+	| TAbstract(a, params) -> TAbstract(a, List.map replace_type_param params)
+	| TInst(cl, params) -> TInst(cl, List.map replace_type_param params)
+	| _ -> t
 
 let is_java_basic_type t =
 	match follow t with
 		| TInst( { cl_path = (["haxe"], "Int32") }, [] )
 		| TInst( { cl_path = (["haxe"], "Int64") }, [] )
 		| TAbstract( { a_path = ([], "Single") }, [] )
-		| TAbstract( { a_path = (["java"], ("Int8" | "Int16" | "Char16")) }, [] )
-		| TInst( { cl_path = ([], "Int") }, [] ) | TAbstract( { a_path =	([], "Int") }, [] )
-		| TInst( { cl_path = ([], "Float") }, [] ) | TAbstract( { a_path =	([], "Float") }, [] )
-		| TEnum( { e_path = ([], "Bool") }, [] ) | TAbstract( { a_path =	([], "Bool") }, [] ) ->
+		| TAbstract( { a_path = (["java"], ("Int8" | "Int16" | "Char16" | "Int64")) }, [] )
+		| TAbstract( { a_path =	([], "Int") }, [] )
+		| TAbstract( { a_path =	([], "Float") }, [] )
+		| TAbstract( { a_path =	([], "Bool") }, [] ) ->
 			true
 		| _ -> false
 
 let is_bool t =
 	match follow t with
-		| TEnum( { e_path = ([], "Bool") }, [] )
 		| TAbstract ({ a_path = ([], "Bool") },[]) ->
+			true
+		| _ -> false
+
+let like_bool t =
+	match follow t with
+		| TAbstract ({ a_path = ([], "Bool") },[])
+		| TAbstract ({ a_path = (["java";"lang"],"Boolean") },[])
+		| TInst ({ cl_path = (["java";"lang"],"Boolean") },[]) ->
 			true
 		| _ -> false
 
 let is_int_float gen t =
 	match follow (gen.greal_type t) with
-		| TInst( { cl_path = (["haxe"], "Int64") }, [] )
 		| TInst( { cl_path = (["haxe"], "Int32") }, [] )
-		| TInst( { cl_path = ([], "Int") }, [] ) | TAbstract( { a_path =	([], "Int") }, [] )
-		| TInst( { cl_path = ([], "Float") }, [] ) | TAbstract( { a_path =	([], "Float") }, [] ) ->
+		| TAbstract( { a_path =	([], "Int") }, [] )
+		| TAbstract( { a_path =	([], "Float") }, [] ) ->
 			true
-		| (TAbstract _ as t) when like_float t -> true
+		| (TAbstract _ as t) when like_float t && not (like_i64 t)-> true
 		| _ -> false
 
 let parse_explicit_iface =
@@ -171,12 +198,10 @@ struct
 				| TField( _, FStatic({ cl_path = (["java";"lang"], "Math") }, { cf_name = "POSITIVE_INFINITY" }) ) ->
 					mk_static_field_access_infer float_cl "POSITIVE_INFINITY" e.epos []
 				| TField( _, FStatic({ cl_path = (["java";"lang"], "Math") }, { cf_name = "isNaN"}) ) ->
-					mk_static_field_access_infer float_cl "_isNaN" e.epos []
+					mk_static_field_access_infer float_cl "isNaN" e.epos []
 				| TCall( ({ eexpr = TField( (_ as ef), FStatic({ cl_path = (["java";"lang"], "Math") }, { cf_name = ("ffloor" as f) }) ) } as fe), p)
 				| TCall( ({ eexpr = TField( (_ as ef), FStatic({ cl_path = (["java";"lang"], "Math") }, { cf_name = ("fceil" as f) }) ) } as fe), p) ->
 						Type.map_expr run { e with eexpr = TCall({ fe with eexpr = TField(ef, FDynamic (String.sub f 1 (String.length f - 1)))	}, p) }
-				| TCall( ({ eexpr = TField( (_ as ef), FStatic({ cl_path = (["java";"lang"], "Math") }, { cf_name = ("fround") }) ) } as fe), p) ->
-						Type.map_expr run { e with eexpr = TCall({ fe with eexpr = TField(ef, FDynamic "rint")	}, p) }
 				| TCall( { eexpr = TField( _, FStatic({ cl_path = (["java";"lang"], "Math") }, { cf_name = "floor" }) ) }, _)
 				| TCall( { eexpr = TField( _, FStatic({ cl_path = (["java";"lang"], "Math") }, { cf_name = "round" }) ) }, _)
 				| TCall( { eexpr = TField( _, FStatic({ cl_path = (["java";"lang"], "Math") }, { cf_name = "ceil" }) ) }, _) ->
@@ -198,7 +223,6 @@ struct
 						] ) }
 					in
 					(match follow_module follow md with
-						| TClassDecl({ cl_path = ([], "Float") })
 						| TAbstractDecl({ a_path = ([], "Float") }) ->
 							{
 								eexpr = TCall(
@@ -208,7 +232,6 @@ struct
 								etype = basic.tbool;
 								epos = e.epos
 							}
-						| TClassDecl{ cl_path = ([], "Int") }
 						| TAbstractDecl{ a_path = ([], "Int") } ->
 							{
 								eexpr = TCall(
@@ -218,8 +241,7 @@ struct
 								etype = basic.tbool;
 								epos = e.epos
 							}
-						| TAbstractDecl{ a_path = ([], "Bool") }
-						| TEnumDecl{ e_path = ([], "Bool") } ->
+						| TAbstractDecl{ a_path = ([], "Bool") } ->
 							mk_is true obj bool_md
 						| TAbstractDecl{ a_path = ([], "Single") } ->
 							mk_is true obj f_md
@@ -229,6 +251,8 @@ struct
 							mk_is true obj i16_md
 						| TAbstractDecl{ a_path = (["java"], "Char16") } ->
 							mk_is true obj c16_md
+						| TAbstractDecl{ a_path = (["java"], "Int64") } ->
+							mk_is true obj i64_md
 						| TClassDecl{ cl_path = (["haxe"], "Int64") } ->
 							mk_is true obj i64_md
 						| TAbstractDecl{ a_path = ([], "Dynamic") }
@@ -251,7 +275,6 @@ struct
 
 end;;
 
-
 (* ******************************************* *)
 (* JavaSpecificSynf *)
 (* ******************************************* *)
@@ -273,11 +296,28 @@ struct
 	let priority = solve_deps name [ DAfter ExpressionUnwrap.priority; DAfter ObjectDeclMap.priority; DAfter ArrayDeclSynf.priority; DBefore IntDivisionSynf.priority ]
 
 	let java_hash s =
+		let high_surrogate c = (c lsr 10) + 0xD7C0 in
+		let low_surrogate c = (c land 0x3FF) lor 0xDC00 in
 		let h = ref Int32.zero in
 		let thirtyone = Int32.of_int 31 in
-		for i = 0 to String.length s - 1 do
-			h := Int32.add (Int32.mul thirtyone !h) (Int32.of_int (int_of_char (String.unsafe_get s i)));
-		done;
+		(try
+			UTF8.validate s;
+			UTF8.iter (fun c ->
+				let c = (UChar.code c) in
+				if c > 0xFFFF then
+					(h := Int32.add (Int32.mul thirtyone !h)
+						(Int32.of_int (high_surrogate c));
+					h := Int32.add (Int32.mul thirtyone !h)
+						(Int32.of_int (low_surrogate c)))
+				else
+					h := Int32.add (Int32.mul thirtyone !h)
+						(Int32.of_int c)
+				) s
+		with UTF8.Malformed_code ->
+			String.iter (fun c ->
+				h := Int32.add (Int32.mul thirtyone !h)
+					(Int32.of_int (Char.code c))) s
+		);
 		!h
 
 	let rec is_final_return_expr is_switch e =
@@ -524,10 +564,10 @@ struct
 
 	let traverse gen runtime_cl =
 		let basic = gen.gcon.basic in
-		let tchar = mt_to_t_dyn ( get_type gen (["java"], "Char16") ) in
-		let tbyte = mt_to_t_dyn ( get_type gen (["java"], "Int8") ) in
-		let tshort = mt_to_t_dyn ( get_type gen (["java"], "Int16") ) in
-		let tsingle = mt_to_t_dyn ( get_type gen ([], "Single") ) in
+		(* let tchar = mt_to_t_dyn ( get_type gen (["java"], "Char16") ) in *)
+		(* let tbyte = mt_to_t_dyn ( get_type gen (["java"], "Int8") ) in *)
+		(* let tshort = mt_to_t_dyn ( get_type gen (["java"], "Int16") ) in *)
+		(* let tsingle = mt_to_t_dyn ( get_type gen ([], "Single") ) in *)
 		let string_ext = get_cl ( get_type gen (["haxe";"lang"], "StringExt")) in
 
 		let is_string t = match follow t with | TInst({ cl_path = ([], "String") }, []) -> true | _ -> false in
@@ -546,14 +586,14 @@ struct
 					run (mk_cast basic.tint obj)
 				(* end Std.int() *)
 
-				| TField( ef, FInstance({ cl_path = ([], "String") }, { cf_name = "length" }) ) ->
+				| TField( ef, FInstance({ cl_path = ([], "String") }, _, { cf_name = "length" }) ) ->
 					{ e with eexpr = TCall(Type.map_expr run e, []) }
 				| TField( ef, field ) when field_name field = "length" && is_string ef.etype ->
 					{ e with eexpr = TCall(Type.map_expr run e, []) }
 				| TCall( ( { eexpr = TField(ef, field) } as efield ), args ) when is_string ef.etype && String.get (field_name field) 0 = '_' ->
 					let field = field_name field in
 					{ e with eexpr = TCall({ efield with eexpr = TField(run ef, FDynamic (String.sub field 1 ( (String.length field) - 1)) )}, List.map run args) }
-				| TCall( ( { eexpr = TField(ef, FInstance({ cl_path = [], "String" }, field )) } as efield ), args ) ->
+				| TCall( ( { eexpr = TField(ef, FInstance({ cl_path = [], "String" }, _, field )) } as efield ), args ) ->
 					let field = field.cf_name in
 					(match field with
 						| "charAt" | "charCodeAt" | "split" | "indexOf"
@@ -565,9 +605,9 @@ struct
 (*				 | TCall( { eexpr = TField(ef, FInstance({ cl_path = [], "String" }, { cf_name = ("toString") })) }, [] ) ->
 					run ef *)
 
-				| TCast(expr, m) when is_boxed_type e.etype ->
-					(* let unboxed_type gen t tbyte tshort tchar tfloat = match follow t with *)
-					run { e with etype = unboxed_type gen e.etype tbyte tshort tchar tsingle }
+				(* | TCast(expr, m) when is_boxed_type e.etype -> *)
+				(* 	(* let unboxed_type gen t tbyte tshort tchar tfloat = match follow t with *) *)
+				(* 	run { e with etype = unboxed_type gen e.etype tbyte tshort tchar tsingle } *)
 
 				| TCast(expr, _) when is_bool e.etype ->
 					{
@@ -645,11 +685,96 @@ struct
 
 end;;
 
+
+(* ******************************************* *)
+(* handle @:throws *)
+(* ******************************************* *)
+let rec is_checked_exc cl =
+	match cl.cl_path with
+		| ["java";"lang"],"RuntimeException" ->
+			false
+		| ["java";"lang"],"Throwable" ->
+			true
+		| _ -> match cl.cl_super with
+			| None -> false
+			| Some(c,_) -> is_checked_exc c
+
+let rec cls_any_super cl supers =
+	PMap.mem cl.cl_path supers || match cl.cl_super with
+		| None -> false
+		| Some(c,_) -> cls_any_super c supers
+
+let rec handle_throws gen cf =
+	List.iter (handle_throws gen) cf.cf_overloads;
+	match cf.cf_expr with
+	| Some ({ eexpr = TFunction(tf) } as e)  ->
+		let rec collect_throws acc = function
+			| (Meta.Throws, [Ast.EConst (Ast.String path), _],_) :: meta -> (try
+				collect_throws (get_cl ( get_type gen (parse_path path)) :: acc) meta
+			with | Not_found | TypeNotFound _ ->
+				collect_throws acc meta)
+			| [] ->
+				acc
+			| _ :: meta ->
+				collect_throws acc meta
+		in
+		let cf_throws = collect_throws [] cf.cf_meta in
+		let throws = ref (List.fold_left (fun map cl ->
+			PMap.add cl.cl_path cl map
+		) PMap.empty cf_throws) in
+		let rec iter e = match e.eexpr with
+			| TTry(etry,ecatches) ->
+				let old = !throws in
+				let needs_check_block = ref true in
+				List.iter (fun (v,e) ->
+					Type.iter iter e;
+					match follow (run_follow gen v.v_type) with
+						| TInst({ cl_path = ["java";"lang"],"Throwable" },_)
+						| TDynamic _ ->
+							needs_check_block := false
+						| TInst(c,_) when is_checked_exc c ->
+							throws := PMap.add c.cl_path c !throws
+						| _ ->()
+				) ecatches;
+				if !needs_check_block then Type.iter iter etry;
+				throws := old
+			| TField(e, (FInstance(_,_,f) | FStatic(_,f) | FClosure(_,f))) ->
+				let tdefs = collect_throws [] f.cf_meta in
+				if tdefs <> [] && not (List.for_all (fun c -> cls_any_super c !throws) tdefs) then
+					raise Exit;
+				Type.iter iter e
+			| TThrow e -> (match follow (run_follow gen e.etype) with
+				| TInst(c,_) when is_checked_exc c && not (cls_any_super c !throws) ->
+					raise Exit
+				| _ -> iter e)
+			| _ -> Type.iter iter e
+		in
+		(try
+			Type.iter iter e
+		with | Exit -> (* needs typed exception to be caught *)
+			let throwable = get_cl (get_type gen (["java";"lang"],"Throwable")) in
+			let catch_var = alloc_var "typedException" (TInst(throwable,[])) in
+			let rethrow = mk_local catch_var e.epos in
+			let hx_exception = get_cl (get_type gen (["haxe";"lang"], "HaxeException")) in
+			let wrap_static = mk_static_field_access (hx_exception) "wrap" (TFun([("obj",false,t_dynamic)], t_dynamic)) rethrow.epos in
+			let wrapped = { rethrow with eexpr = TThrow { rethrow with eexpr = TCall(wrap_static, [rethrow]) }; } in
+			let map_throws cl =
+				let var = alloc_var "typedException" (TInst(cl,List.map (fun _ -> t_dynamic) cl.cl_params)) in
+				var, { tf.tf_expr with eexpr = TThrow (mk_local var e.epos) }
+			in
+			cf.cf_expr <- Some { e with
+				eexpr = TFunction({ tf with
+					tf_expr = mk_block { tf.tf_expr with eexpr = TTry(tf.tf_expr, List.map (map_throws) cf_throws @ [catch_var, wrapped]) }
+				})
+			})
+	| _ -> ()
+
+
 let connecting_string = "?" (* ? see list here http://www.fileformat.info/info/unicode/category/index.htm and here for C# http://msdn.microsoft.com/en-us/library/aa664670.aspx *)
-let default_package = "java" (* I'm having this separated as I'm still not happy with having a cs package. Maybe dotnet would be better? *)
+let default_package = "java"
 let strict_mode = ref false (* strict mode is so we can check for unexpected information *)
 
-(* reserved c# words *)
+(* reserved java words *)
 let reserved = let res = Hashtbl.create 120 in
 	List.iter (fun lst -> Hashtbl.add res lst ("_" ^ lst)) ["abstract"; "assert"; "boolean"; "break"; "byte"; "case"; "catch"; "char"; "class";
 		"const"; "continue"; "default"; "do"; "double"; "else"; "enum"; "extends"; "final";
@@ -677,7 +802,7 @@ let rec get_fun_modifiers meta access modifiers =
 		| [] -> access,modifiers
 		| (Meta.Protected,[],_) :: meta -> get_fun_modifiers meta "protected" modifiers
 		| (Meta.Internal,[],_) :: meta -> get_fun_modifiers meta "" modifiers
-		(*| (Meta.ReadOnly,[],_) :: meta -> get_fun_modifiers meta access ("readonly" :: modifiers)*)
+		| (Meta.ReadOnly,[],_) :: meta -> get_fun_modifiers meta access ("final" :: modifiers)
 		(*| (Meta.Unsafe,[],_) :: meta -> get_fun_modifiers meta access ("unsafe" :: modifiers)*)
 		| (Meta.Volatile,[],_) :: meta -> get_fun_modifiers meta access ("volatile" :: modifiers)
 		| (Meta.Transient,[],_) :: meta -> get_fun_modifiers meta access ("transient" :: modifiers)
@@ -687,15 +812,21 @@ let rec get_fun_modifiers meta access modifiers =
 (* this was the way I found to pass the generator context to be accessible across all functions here *)
 (* so 'configure' is almost 'top-level' and will have all functions needed to make this work *)
 let configure gen =
+	let native_arr_cl = get_cl ( get_type gen (["java"], "NativeArray") ) in
+	gen.gclasses.nativearray <- (fun t -> TInst(native_arr_cl,[t]));
+	gen.gclasses.nativearray_type <- (function TInst(_,[t]) -> t | _ -> assert false);
+	gen.gclasses.nativearray_len <- (fun e p -> mk_field_access gen e "length" p);
+
 	let basic = gen.gcon.basic in
 
 	let fn_cl = get_cl (get_type gen (["haxe";"lang"],"Function")) in
 
 	let runtime_cl = get_cl (get_type gen (["haxe";"lang"],"Runtime")) in
+	let nulltdef = get_tdef (get_type gen ([],"Null")) in
 
 	(*let string_ref = get_cl ( get_type gen (["haxe";"lang"], "StringRefl")) in*)
 
-	let ti64 = match ( get_type gen (["haxe";"_Int64"], "NativeInt64") ) with | TTypeDecl t -> TType(t,[]) | _ -> assert false in
+	let ti64 = match ( get_type gen (["java"], "Int64") ) with | TAbstractDecl a -> TAbstract(a,[]) | _ -> assert false in
 
 	let has_tdynamic params =
 		List.exists (fun e -> match run_follow gen e with | TDynamic _ -> true | _ -> false) params
@@ -717,16 +848,13 @@ let configure gen =
 							List.map (fun t ->
 								let f_t = gen.gfollow#run_f t in
 								match f_t  with
-									| TEnum ({ e_path = ([], "Bool") }, [])
 									| TAbstract ({ a_path = ([], "Bool") },[])
-									| TInst ({ cl_path = ([],"Float") },[])
 									| TAbstract ({ a_path = ([],"Float") },[])
 									| TInst ({ cl_path = ["haxe"],"Int32" },[])
 									| TInst ({ cl_path = ["haxe"],"Int64" },[])
-									| TInst ({ cl_path = ([],"Int") },[])
 									| TAbstract ({ a_path = ([],"Int") },[])
-									| TType ({ t_path = ["haxe";"_Int64"], "NativeInt64" },[])
-									| TAbstract ({ a_path = ["haxe";"_Int64"], "NativeInt64" },[])
+									| TType ({ t_path = ["java"], "Int64" },[])
+									| TAbstract ({ a_path = ["java"], "Int64" },[])
 									| TType ({ t_path = ["java"],"Int8" },[])
 									| TAbstract ({ a_path = ["java"],"Int8" },[])
 									| TType ({ t_path = ["java"],"Int16" },[])
@@ -735,10 +863,11 @@ let configure gen =
 									| TAbstract ({ a_path = ["java"],"Char16" },[])
 									| TType ({ t_path = [],"Single" },[])
 									| TAbstract ({ a_path = [],"Single" },[]) ->
-											basic.tnull f_t
+										TType(nulltdef, [f_t])
 									(*| TType ({ t_path = [], "Null"*)
-									| TInst (cl, ((_ :: _) as p)) ->
-										TInst(cl, List.map (fun _ -> t_dynamic) p)
+									| TInst (cl, ((_ :: _) as p)) when cl.cl_path <> (["java"],"NativeArray") ->
+										(* TInst(cl, List.map (fun _ -> t_dynamic) p) *)
+										TInst(cl,p)
 									| TEnum (e, ((_ :: _) as p)) ->
 										TEnum(e, List.map (fun _ -> t_dynamic) p)
 									| _ -> t
@@ -760,18 +889,14 @@ let configure gen =
 	let write_field w name = write w (change_field name) in
 
 	gen.gfollow#add ~name:"follow_basic" (fun t -> match t with
-			| TEnum ({ e_path = ([], "Bool") }, [])
 			| TAbstract ({ a_path = ([], "Bool") },[])
-			| TEnum ({ e_path = ([], "Void") }, [])
 			| TAbstract ({ a_path = ([], "Void") },[])
-			| TInst ({ cl_path = ([],"Float") },[])
 			| TAbstract ({ a_path = ([],"Float") },[])
-			| TInst ({ cl_path = ([],"Int") },[])
 			| TAbstract ({ a_path = ([],"Int") },[])
 			| TInst( { cl_path = (["haxe"], "Int32") }, [] )
 			| TInst( { cl_path = (["haxe"], "Int64") }, [] )
-			| TType ({ t_path = ["haxe";"_Int64"], "NativeInt64" },[])
-			| TAbstract ({ a_path = ["haxe";"_Int64"], "NativeInt64" },[])
+			| TType ({ t_path = ["java"], "Int64" },[])
+			| TAbstract ({ a_path = ["java"], "Int64" },[])
 			| TType ({ t_path = ["java"],"Int8" },[])
 			| TAbstract ({ a_path = ["java"],"Int8" },[])
 			| TType ({ t_path = ["java"],"Int16" },[])
@@ -779,18 +904,28 @@ let configure gen =
 			| TType ({ t_path = ["java"],"Char16" },[])
 			| TAbstract ({ a_path = ["java"],"Char16" },[])
 			| TType ({ t_path = [],"Single" },[])
-			| TAbstract ({ a_path = [],"Single" },[])
-			| TType ({ t_path = [],"Null" },[_]) -> Some t
-			| TAbstract ({ a_impl = Some _ } as a, pl) ->
-					Some (gen.gfollow#run_f ( Codegen.Abstract.get_underlying_type a pl) )
+			| TAbstract ({ a_path = [],"Single" },[]) ->
+					Some t
+			| TType (({ t_path = [],"Null" } as tdef),[t2]) ->
+					Some (TType(tdef,[gen.gfollow#run_f t2]))
+			| TAbstract (a, pl) when not (Meta.has Meta.CoreType a.a_meta) ->
+					Some (gen.gfollow#run_f ( Abstract.get_underlying_type a pl) )
 			| TAbstract( { a_path = ([], "EnumValue") }, _ )
 			| TInst( { cl_path = ([], "EnumValue") }, _  ) -> Some t_dynamic
 			| _ -> None);
 
 	let change_path path = (change_ns (fst path), change_clname (snd path)) in
 
-	let path_s path = match path with
-		| (ns,clname) -> path_s (change_ns ns, change_clname clname)
+	let path_s path meta = try
+		match Meta.get Meta.JavaCanonical meta with
+			| (Meta.JavaCanonical, [EConst(String pack), _; EConst(String name), _], _) ->
+				if pack = "" then
+					name
+				else
+					pack ^ "." ^ name
+			| _ -> raise Not_found
+		with Not_found -> match path with
+			| (ns,clname) -> path_s (change_ns ns, change_clname clname)
 	in
 
 	let cl_cl = get_cl (get_type gen (["java";"lang"],"Class")) in
@@ -798,8 +933,8 @@ let configure gen =
 	let rec real_type t =
 		let t = gen.gfollow#run_f t in
 		match t with
-			| TAbstract ({ a_impl = Some _ } as a, pl) ->
-				real_type (Codegen.Abstract.get_underlying_type a pl)
+			| TAbstract (a, pl) when not (Meta.has Meta.CoreType a.a_meta) ->
+				real_type (Abstract.get_underlying_type a pl)
 			| TInst( { cl_path = (["haxe"], "Int32") }, [] ) -> gen.gcon.basic.tint
 			| TInst( { cl_path = (["haxe"], "Int64") }, [] ) -> ti64
 			| TAbstract( { a_path = ([], "Class") }, p	)
@@ -809,13 +944,14 @@ let configure gen =
 			| TEnum(e,params) -> TEnum(e, List.map (fun _ -> t_dynamic) params)
 			| TInst(c,params) when Meta.has Meta.Enum c.cl_meta ->
 				TInst(c, List.map (fun _ -> t_dynamic) params)
+			| TInst({ cl_kind = KExpr _ }, _) -> t_dynamic
 			| TInst _ -> t
-			| TType({ t_path = ([], "Null") }, [t]) when is_java_basic_type t -> t_dynamic
+			| TType({ t_path = ([], "Null") }, [t]) when is_java_basic_type (gen.gfollow#run_f t) -> t_dynamic
 			| TType({ t_path = ([], "Null") }, [t]) ->
 				(match follow t with
 					| TInst( { cl_kind = KTypeParameter _ }, []) ->
-							(* t_dynamic *)
-							real_type t
+							t_dynamic
+							(* real_type t *)
 					| _ -> real_type t
 				)
 			| TType _ | TAbstract _ -> t
@@ -838,12 +974,12 @@ let configure gen =
 		scope := PMap.add name () !scope
 	in
 
-	let add_import pos path =
+	let add_import pos path meta =
 		let name = snd path in
 		let rec loop = function
 			| (pack, n) :: _ when name = n ->
 					if path <> (pack,n) then
-						gen.gcon.error ("This expression cannot be generated because " ^ path_s path ^ " is shadowed by the current scope and ") pos
+						gen.gcon.error ("This expression cannot be generated because " ^ path_s path meta ^ " is shadowed by the current scope and ") pos
 			| _ :: tl ->
 					loop tl
 			| [] ->
@@ -853,17 +989,17 @@ let configure gen =
 		loop !imports
 	in
 
-	let path_s_import pos path = match path with
+	let path_s_import pos path meta = match path with
 		| [], name when PMap.mem name !scope ->
 				gen.gcon.error ("This expression cannot be generated because " ^ name ^ " is shadowed by the current scope") pos;
 				name
 		| pack1 :: _, name when PMap.mem pack1 !scope -> (* exists in scope *)
-				add_import pos path;
+				add_import pos path meta;
 				(* check if name exists in scope *)
 				if PMap.mem name !scope then
 					gen.gcon.error ("This expression cannot be generated because " ^ pack1 ^ " and " ^ name ^ " are both shadowed by the current scope") pos;
 				name
-		| _ -> path_s path
+		| _ -> path_s path meta
 	in
 
 	let is_dynamic t = match real_type t with
@@ -880,17 +1016,13 @@ let configure gen =
 	let rec t_s pos t =
 		match real_type t with
 			(* basic types *)
-			| TEnum ({ e_path = ([], "Bool") }, [])
 			| TAbstract ({ a_path = ([], "Bool") },[]) -> "boolean"
-			| TEnum ({ e_path = ([], "Void") }, [])
 			| TAbstract ({ a_path = ([], "Void") },[]) ->
-					path_s_import pos (["java";"lang"], "Object")
-			| TInst ({ cl_path = ([],"Float") },[])
+					path_s_import pos (["java";"lang"], "Object") []
 			| TAbstract ({ a_path = ([],"Float") },[]) -> "double"
-			| TInst ({ cl_path = ([],"Int") },[])
 			| TAbstract ({ a_path = ([],"Int") },[]) -> "int"
-			| TType ({ t_path = ["haxe";"_Int64"], "NativeInt64" },[])
-			| TAbstract ({ a_path = ["haxe";"_Int64"], "NativeInt64" },[]) -> "long"
+			| TType ({ t_path = ["java"], "Int64" },[])
+			| TAbstract ({ a_path = ["java"], "Int64" },[]) -> "long"
 			| TType ({ t_path = ["java"],"Int8" },[])
 			| TAbstract ({ a_path = ["java"],"Int8" },[]) -> "byte"
 			| TType ({ t_path = ["java"],"Int16" },[])
@@ -915,81 +1047,77 @@ let configure gen =
 			(* end of basic types *)
 			| TInst ({ cl_kind = KTypeParameter _; cl_path=p }, []) -> snd p
 			| TAbstract ({ a_path = [], "Dynamic" },[]) ->
-					path_s_import pos (["java";"lang"], "Object")
+					path_s_import pos (["java";"lang"], "Object") []
 			| TMono r -> (match !r with | None -> "java.lang.Object" | Some t -> t_s pos (run_follow gen t))
 			| TInst ({ cl_path = [], "String" }, []) ->
-					path_s_import pos (["java";"lang"], "String")
+					path_s_import pos (["java";"lang"], "String") []
 			| TAbstract ({ a_path = [], "Class" }, [p]) | TAbstract ({ a_path = [], "Enum" }, [p])
 			| TInst ({ cl_path = [], "Class" }, [p]) | TInst ({ cl_path = [], "Enum" }, [p]) ->
-					path_param_s pos (TClassDecl cl_cl) (["java";"lang"], "Class") [p]
+					path_param_s pos (TClassDecl cl_cl) (["java";"lang"], "Class") [p] []
 			| TAbstract ({ a_path = [], "Class" }, _) | TAbstract ({ a_path = [], "Enum" }, _)
 			| TInst ({ cl_path = [], "Class" }, _) | TInst ({ cl_path = [], "Enum" }, _) ->
-					path_s_import pos (["java";"lang"], "Class")
-			| TEnum ({e_path = p}, _) ->
-					path_s_import pos p
-			| TInst (({cl_path = p;} as cl), _) when Meta.has Meta.Enum cl.cl_meta ->
-					path_s_import pos p
-			| TInst (({cl_path = p;} as cl), params) -> (path_param_s pos (TClassDecl cl) p params)
-			| TType (({t_path = p;} as t), params) -> (path_param_s pos (TTypeDecl t) p params)
+					path_s_import pos (["java";"lang"], "Class") []
+			| TEnum ({e_path = p; e_meta = meta}, _) ->
+					path_s_import pos p meta
+			| TInst (({cl_path = p; cl_meta = meta} as cl), _) when Meta.has Meta.Enum cl.cl_meta ->
+					path_s_import pos p meta
+			| TInst (({cl_path = p; cl_meta = meta} as cl), params) -> (path_param_s pos (TClassDecl cl) p params meta)
+			| TType (({t_path = p; t_meta = meta} as t), params) -> (path_param_s pos (TTypeDecl t) p params meta)
 			| TAnon (anon) ->
 				(match !(anon.a_status) with
 					| Statics _ | EnumStatics _ | AbstractStatics _ ->
-							path_s_import pos (["java";"lang"], "Class")
+							path_s_import pos (["java";"lang"], "Class") []
 					| _ ->
-							path_s_import pos (["java";"lang"], "Object"))
+							path_s_import pos (["java";"lang"], "Object") [])
 				| TDynamic _ ->
-						path_s_import pos (["java";"lang"], "Object")
+						path_s_import pos (["java";"lang"], "Object") []
 			(* No Lazy type nor Function type made. That's because function types will be at this point be converted into other types *)
 			| _ -> if !strict_mode then begin trace ("[ !TypeError " ^ (Type.s_type (Type.print_context()) t) ^ " ]"); assert false end else "[ !TypeError " ^ (Type.s_type (Type.print_context()) t) ^ " ]"
 
 	and param_t_s pos t =
 		match run_follow gen t with
-			| TEnum ({ e_path = ([], "Bool") }, [])
 			| TAbstract ({ a_path = ([], "Bool") },[]) ->
-					path_s_import pos (["java";"lang"], "Boolean")
-			| TInst ({ cl_path = ([],"Float") },[])
+					path_s_import pos (["java";"lang"], "Boolean") []
 			| TAbstract ({ a_path = ([],"Float") },[]) ->
-					path_s_import pos (["java";"lang"], "Double")
-			| TInst ({ cl_path = ([],"Int") },[])
+					path_s_import pos (["java";"lang"], "Double") []
 			| TAbstract ({ a_path = ([],"Int") },[]) ->
-					path_s_import pos (["java";"lang"], "Integer")
-			| TType ({ t_path = ["haxe";"_Int64"], "NativeInt64" },[])
-			| TAbstract ({ a_path = ["haxe";"_Int64"], "NativeInt64" },[]) ->
-					path_s_import pos (["java";"lang"], "Long")
+					path_s_import pos (["java";"lang"], "Integer") []
+			| TType ({ t_path = ["java"], "Int64" },[])
+			| TAbstract ({ a_path = ["java"], "Int64" },[]) ->
+					path_s_import pos (["java";"lang"], "Long") []
 			| TInst ({ cl_path = ["haxe"],"Int64" },[])
 			| TAbstract ({ a_path = ["haxe"],"Int64" },[]) ->
-					path_s_import pos (["java";"lang"], "Long")
+					path_s_import pos (["java";"lang"], "Long") []
 			| TInst ({ cl_path = ["haxe"],"Int32" },[])
 			| TAbstract ({ a_path = ["haxe"],"Int32" },[]) ->
-					path_s_import pos (["java";"lang"], "Integer")
+					path_s_import pos (["java";"lang"], "Integer") []
 			| TType ({ t_path = ["java"],"Int8" },[])
 			| TAbstract ({ a_path = ["java"],"Int8" },[]) ->
-					path_s_import pos (["java";"lang"], "Byte")
+					path_s_import pos (["java";"lang"], "Byte") []
 			| TType ({ t_path = ["java"],"Int16" },[])
 			| TAbstract ({ a_path = ["java"],"Int16" },[]) ->
-					path_s_import pos (["java";"lang"], "Short")
+					path_s_import pos (["java";"lang"], "Short") []
 			| TType ({ t_path = ["java"],"Char16" },[])
 			| TAbstract ({ a_path = ["java"],"Char16" },[]) ->
-					path_s_import pos (["java";"lang"], "Character")
+					path_s_import pos (["java";"lang"], "Character") []
 			| TType ({ t_path = [],"Single" },[])
 			| TAbstract ({ a_path = [],"Single" },[]) ->
-					path_s_import pos (["java";"lang"], "Float")
+					path_s_import pos (["java";"lang"], "Float") []
 			| TDynamic _ -> "?"
 			| TInst (cl, params) -> t_s pos (TInst(cl, change_param_type (TClassDecl cl) params))
 			| TType (cl, params) -> t_s pos (TType(cl, change_param_type (TTypeDecl cl) params))
 			| TEnum (e, params) -> t_s pos (TEnum(e, change_param_type (TEnumDecl e) params))
 			| _ -> t_s pos t
 
-	and path_param_s pos md path params =
+	and path_param_s pos md path params meta =
 			match params with
-				| [] -> path_s_import pos path
-				| _ when has_tdynamic (change_param_type md params) -> path_s_import pos path
-				| _ -> sprintf "%s<%s>" (path_s_import pos path) (String.concat ", " (List.map (fun t -> param_t_s pos t) (change_param_type md params)))
+				| [] -> path_s_import pos path meta
+				| _ when has_tdynamic (change_param_type md params) -> path_s_import pos path meta
+				| _ -> sprintf "%s<%s>" (path_s_import pos path meta) (String.concat ", " (List.map (fun t -> param_t_s pos t) (change_param_type md params)))
 	in
 
 	let rett_s pos t =
 		match t with
-			| TEnum ({e_path = ([], "Void")}, [])
 			| TAbstract ({ a_path = ([], "Void") },[]) -> "void"
 			| _ -> t_s pos t
 	in
@@ -1026,7 +1154,8 @@ let configure gen =
 		match e.eexpr with
 			| TLocal { v_name = "__fallback__" }
 			| TCall ({ eexpr = TLocal( { v_name = "__label__" } ) }, [ { eexpr = TConst(TInt _) } ] ) -> false
-			| TBlock _ | TFor _ | TSwitch _ | TPatMatch _ | TTry _ | TIf _ -> false
+			| TCall ({ eexpr = TLocal( { v_name = "__lock__" } ) }, _ ) -> false
+			| TBlock _ | TFor _ | TSwitch _ | TTry _ | TIf _ -> false
 			| TWhile (_,_,flag) when flag = Ast.NormalWhile -> false
 			| _ -> true
 	in
@@ -1059,6 +1188,61 @@ let configure gen =
 		| _ -> t
 	in
 
+	let rec extract_tparams params el =
+		match el with
+			| ({ eexpr = TLocal({ v_name = "$type_param" }) } as tp) :: tl ->
+				extract_tparams (tp.etype :: params) tl
+			| _ -> (params, el)
+	in
+
+	let line_directive =
+		if Common.defined gen.gcon Define.RealPosition then
+			fun w p -> ()
+		else fun w p ->
+			let cur_line = Lexer.get_error_line p in
+			let file = Common.get_full_path p.pfile in
+			print w "//line %d \"%s\"" cur_line (Ast.s_escape file); newline w
+	in
+
+	let extract_statements expr =
+		let ret = ref [] in
+		let rec loop expr = match expr.eexpr with
+			| TCall ({ eexpr = TLocal {
+					v_name = "__is__" | "__typeof__" | "__array__"
+				} }, el) ->
+				List.iter loop el
+			| TNew ({ cl_path = (["java"], "NativeArray") }, params, [ size ]) ->
+				()
+			| TUnop (Ast.Increment, _, _)
+			| TUnop (Ast.Decrement, _, _)
+			| TBinop (Ast.OpAssign, _, _)
+			| TBinop (Ast.OpAssignOp _, _, _)
+			| TLocal { v_name = "__fallback__" }
+			| TLocal { v_name = "__sbreak__" } ->
+				ret := expr :: !ret
+			| TConst _
+			| TLocal _
+			| TArray _
+			| TBinop _
+			| TField _
+			| TEnumParameter _
+			| TTypeExpr _
+			| TObjectDecl _
+			| TArrayDecl _
+			| TCast _
+			| TMeta _
+			| TParenthesis _
+			| TUnop _ ->
+				Type.iter loop expr
+			| TFunction _ -> () (* do not extract parameters from inside of it *)
+			| _ ->
+				ret := expr :: !ret
+		in
+		loop expr;
+		(* [expr] *)
+		List.rev !ret
+	in
+
 	let expr_s w e =
 		in_value := false;
 		let rec expr_s w e =
@@ -1070,7 +1254,7 @@ let configure gen =
 						| TInt i32 ->
 							print w "%ld" i32;
 							(match real_type e.etype with
-								| TType( { t_path = (["haxe";"_Int64"], "NativeInt64") }, [] ) -> write w "L";
+								| TType( { t_path = (["java"], "Int64") }, [] ) -> write w "L";
 								| _ -> ()
 							)
 						| TFloat s ->
@@ -1085,32 +1269,29 @@ let configure gen =
 						| TBool b -> write w (if b then "true" else "false")
 						| TNull ->
 							(match real_type e.etype with
-								| TType( { t_path = (["haxe";"_Int64"], "NativeInt64") }, [] )
+								| TAbstract( { a_path = (["java"], "Int64") }, [] )
 								| TInst( { cl_path = (["haxe"], "Int64") }, [] ) -> write w "0L"
 								| TInst( { cl_path = (["haxe"], "Int32") }, [] )
-								| TInst({ cl_path = ([], "Int") },[])
 								| TAbstract ({ a_path = ([], "Int") },[]) -> expr_s w ({ e with eexpr = TConst(TInt Int32.zero) })
-								| TInst({ cl_path = ([], "Float") },[])
 								| TAbstract ({ a_path = ([], "Float") },[]) -> expr_s w ({ e with eexpr = TConst(TFloat "0.0") })
-								| TEnum({ e_path = ([], "Bool") }, [])
 								| TAbstract ({ a_path = ([], "Bool") },[]) -> write w "false"
 								| TAbstract _ when like_int e.etype ->
-									expr_s w { e with eexpr = TConst(TInt Int32.zero) }
+									expr_s w (mk_cast e.etype { e with eexpr = TConst(TInt Int32.zero) })
 								| TAbstract _ when like_float e.etype ->
-									expr_s w { e with eexpr = TConst(TFloat "0.0") }
-								| _ -> write w "null")
+									expr_s w (mk_cast e.etype { e with eexpr = TConst(TFloat "0.0") } )
+								| t -> write w ("null") )
 						| TThis -> write w "this"
 						| TSuper -> write w "super")
 				| TLocal { v_name = "__fallback__" } -> ()
 				| TLocal { v_name = "__sbreak__" } -> write w "break"
 				| TLocal { v_name = "__undefined__" } ->
-					write w (t_s e.epos (TInst(runtime_cl, List.map (fun _ -> t_dynamic) runtime_cl.cl_types)));
+					write w (t_s e.epos (TInst(runtime_cl, List.map (fun _ -> t_dynamic) runtime_cl.cl_params)));
 					write w ".undefined";
 				| TLocal var ->
 					write_id w var.v_name
 				| TField(_, FEnum(en,ef)) ->
 					let s = ef.ef_name in
-					print w "%s." (path_s_import e.epos en.e_path); write_field w s
+					print w "%s." (path_s_import e.epos en.e_path en.e_meta); write_field w s
 				| TArray (e1, e2) ->
 					expr_s w e1; write w "["; expr_s w e2; write w "]"
 				| TBinop ((Ast.OpAssign as op), e1, e2)
@@ -1131,16 +1312,19 @@ let configure gen =
 				| TField (e, s) ->
 					expr_s w e; write w "."; write_field w (field_name s)
 				| TTypeExpr (TClassDecl { cl_path = (["haxe"], "Int32") }) ->
-					write w (path_s_import e.epos (["haxe"], "Int32"))
+					write w (path_s_import e.epos (["haxe"], "Int32") [])
 				| TTypeExpr (TClassDecl { cl_path = (["haxe"], "Int64") }) ->
-					write w (path_s_import e.epos (["haxe"], "Int64"))
+					write w (path_s_import e.epos (["haxe"], "Int64") [])
 				| TTypeExpr mt -> write w (md_s e.epos mt)
 				| TParenthesis e ->
 					write w "("; expr_s w e; write w ")"
 				| TMeta (_,e) ->
 					expr_s w e
-				| TArrayDecl el when t_has_type_param_shallow false e.etype ->
-					print w "( (%s) (new java.lang.Object[] " (t_s e.epos e.etype);
+				| TCall ({ eexpr = TLocal { v_name = "__array__" } }, el)
+				| TCall ({ eexpr = TField(_, FStatic({ cl_path = (["java"],"NativeArray") }, { cf_name = "make" })) }, el)
+				| TArrayDecl el when t_has_type_param e.etype ->
+					let _, el = extract_tparams [] el in
+					print w "( (%s) (new %s " (t_s e.epos e.etype) (t_s e.epos (replace_type_param e.etype));
 					write w "{";
 					ignore (List.fold_left (fun acc e ->
 						(if acc <> 0 then write w ", ");
@@ -1148,7 +1332,10 @@ let configure gen =
 						acc + 1
 					) 0 el);
 					write w "}) )"
+				| TCall ({ eexpr = TLocal { v_name = "__array__" } }, el)
+				| TCall ({ eexpr = TField(_, FStatic({ cl_path = (["java"],"NativeArray") }, { cf_name = "make" })) }, el)
 				| TArrayDecl el ->
+					let _, el = extract_tparams [] el in
 					print w "new %s" (param_t_s e.epos (transform_nativearray_t e.etype));
 					let is_double = match follow e.etype with
 					 | TInst(_,[ t ]) -> if like_float t && not (like_int t) then Some t else None
@@ -1177,9 +1364,20 @@ let configure gen =
 					write w " )"
 				| TCall ({ eexpr = TLocal( { v_name = "__java__" } ) }, [ { eexpr = TConst(TString(s)) } ] ) ->
 					write w s
+				| TCall ({ eexpr = TLocal( { v_name = "__java__" } ) }, { eexpr = TConst(TString(s)) } :: tl ) ->
+					Codegen.interpolate_code gen.gcon s tl (write w) (expr_s w) e.epos
 				| TCall ({ eexpr = TLocal( { v_name = "__lock__" } ) }, [ eobj; eblock ] ) ->
 					write w "synchronized(";
-					expr_s w eobj;
+					let rec loop eobj = match eobj.eexpr with
+						| TTypeExpr md ->
+							expr_s w eobj;
+							write w ".class"
+						| TMeta(_,e) | TParenthesis(e) ->
+							loop e
+						| _ ->
+							expr_s w eobj
+					in
+					loop eobj;
 					write w ")";
 					(match eblock.eexpr with
 					| TBlock(_ :: _) ->
@@ -1198,12 +1396,6 @@ let configure gen =
 					expr_s w expr;
 					write w ".class"
 				| TCall (e, el) ->
-					let rec extract_tparams params el =
-						match el with
-							| ({ eexpr = TLocal({ v_name = "$type_param" }) } as tp) :: tl ->
-								extract_tparams (tp.etype :: params) tl
-							| _ -> (params, el)
-					in
 					let params, el = extract_tparams [] el in
 
 					expr_s w e;
@@ -1257,10 +1449,10 @@ let configure gen =
 					) 0 el);
 					write w ")"
 				| TNew ({ cl_kind = KTypeParameter _ } as cl, params, el) ->
-					print w "null /* This code should never be reached. It was produced by the use of @:generic on a new type parameter instance: %s */" (path_param_s e.epos (TClassDecl cl) cl.cl_path params)
+						print w "null /* This code should never be reached. It was produced by the use of @:generic on a new type parameter instance: %s */" (path_param_s e.epos (TClassDecl cl) cl.cl_path params cl.cl_meta)
 				| TNew (cl, params, el) ->
 					write w "new ";
-					write w (path_param_s e.epos (TClassDecl cl) cl.cl_path params);
+					write w (path_param_s e.epos (TClassDecl cl) cl.cl_path params cl.cl_meta);
 					write w "(";
 					ignore (List.fold_left (fun acc e ->
 						(if acc <> 0 then write w ", ");
@@ -1292,22 +1484,14 @@ let configure gen =
 					expr_s w e
 				| TBlock el ->
 					begin_block w;
-					(*let last_line = ref (-1) in
-					let line_directive p =
-						let cur_line = Lexer.get_error_line p in
-						let is_relative_path = (String.sub p.pfile 0 1) = "." in
-						let file = if is_relative_path then "../" ^ p.pfile else p.pfile in
-						if cur_line <> ((!last_line)+1) then begin print w "//#line %d \"%s\"" cur_line (Ast.s_escape file); newline w end;
-						last_line := cur_line in*)
 					List.iter (fun e ->
-						(*line_directive e.epos;*)
-						in_value := false;
-						(match e.eexpr with
-						| TConst _ -> ()
-						| _ ->
+						List.iter (fun e ->
+							in_value := false;
+							line_directive w e.epos;
 							expr_s w e;
-							(if has_semicolon e then write w ";");
-							newline w);
+							if has_semicolon e then write w ";";
+							newline w;
+						) (extract_statements e)
 					) el;
 					end_block w
 				| TIf (econd, e1, Some(eelse)) when was_in_value ->
@@ -1327,7 +1511,7 @@ let configure gen =
 					(match eelse with
 						| None -> ()
 						| Some e ->
-							write w " else ";
+							write w "else";
 							in_value := false;
 							expr_s w (mk_block e)
 					)
@@ -1355,10 +1539,15 @@ let configure gen =
 						List.iter (fun e ->
 							write w "case ";
 							in_value := true;
-							expr_s w e;
+							(match e.eexpr with
+								| TField(_, FEnum(e, ef)) ->
+									let changed_name = change_id ef.ef_name in
+									write w changed_name
+								| _ ->
+									expr_s w e);
 							write w ":";
+							newline w;
 						) el;
-						newline w;
 						in_value := false;
 						expr_s w (mk_block e);
 						newline w;
@@ -1410,18 +1599,100 @@ let configure gen =
 					if !strict_mode then assert false
 				| TObjectDecl _ -> write w "[ obj decl not supported ]"; if !strict_mode then assert false
 				| TFunction _ -> write w "[ func decl not supported ]"; if !strict_mode then assert false
-				| TPatMatch _ -> write w "[ match not supported ]"; if !strict_mode then assert false
 				| TEnumParameter _ -> write w "[ enum parameter not supported ]"; if !strict_mode then assert false
 		in
 		expr_s w e
 	in
 
-	let get_string_params cl_types =
-		match cl_types with
+	let rec gen_fpart_attrib w = function
+		| EConst( Ident i ), _ ->
+			write w i
+		| EField( ef, f ), _ ->
+			gen_fpart_attrib w ef;
+			write w ".";
+			write w f
+		| _, p ->
+			gen.gcon.error "Invalid expression inside @:meta metadata" p
+	in
+
+	let rec gen_spart w = function
+		| EConst c, p -> (match c with
+			| Int s | Float s | Ident s ->
+				write w s
+			| String s ->
+				write w "\"";
+				write w (escape s);
+				write w "\""
+			| _ -> gen.gcon.error "Invalid expression inside @:meta metadata" p)
+		| EField( ef, f ), _ ->
+			gen_spart w ef;
+			write w ".";
+			write w f
+		| EBinop( Ast.OpAssign, (EConst (Ident s), _), e2 ), _ ->
+			write w s;
+			write w " = ";
+			gen_spart w e2
+		| EArrayDecl( el ), _ ->
+			write w "{";
+			let fst = ref true in
+			List.iter (fun e ->
+				if !fst then fst := false else write w ", ";
+				gen_spart w e
+			) el;
+			write w "}"
+		| ECall(fpart,args), _ ->
+			gen_fpart_attrib w fpart;
+			write w "(";
+			let fst = ref true in
+			List.iter (fun e ->
+				if !fst then fst := false else write w ", ";
+				gen_spart w e
+			) args;
+			write w ")"
+		| _, p ->
+			gen.gcon.error "Invalid expression inside @:meta metadata" p
+	in
+
+	let gen_annotations w ?(add_newline=true) metadata =
+		List.iter (function
+			| Meta.Meta, [meta], _ ->
+				write w "@";
+				gen_spart w meta;
+				if add_newline then newline w else write w " ";
+			| _ -> ()
+		) metadata
+	in
+
+	let argt_s p t =
+		let w = new_source_writer () in
+		let rec run t =
+			match t with
+				| TType (tdef,p) ->
+					gen_annotations w ~add_newline:false tdef.t_meta;
+					run (follow_once t)
+				| TMono r ->
+					(match !r with
+					| Some t -> run t
+					| _ -> () (* avoid infinite loop / should be the same in this context *))
+				| TLazy f ->
+					run (!f())
+				| _ -> ()
+		in
+		run t;
+		let ret = t_s p t in
+		let c = contents w in
+		if c <> "" then
+			c ^ " " ^ ret
+		else
+			ret
+	in
+
+	let get_string_params cl_params =
+		match cl_params with
 			| [] ->
 				("","")
 			| _ ->
-				let params = sprintf "<%s>" (String.concat ", " (List.map (fun (_, tcl) -> match follow tcl with | TInst(cl, _) -> snd cl.cl_path | _ -> assert false) cl_types)) in
+				let params = sprintf "<%s>" (String.concat ", " (List.map (fun (_, tcl) -> match follow tcl with | TInst(cl, _) -> snd cl.cl_path | _ -> assert false) cl_params)) in
 				let params_extends = List.fold_left (fun acc (name, t) ->
 					match run_follow gen t with
 						| TInst (cl, p) ->
@@ -1429,9 +1700,14 @@ let configure gen =
 								| [] -> acc
 								| _ -> acc) (* TODO
 								| _ -> (sprintf " where %s : %s" name (String.concat ", " (List.map (fun (cl,p) -> path_param_s (TClassDecl cl) cl.cl_path p) cl.cl_implements))) :: acc ) *)
-						| _ -> trace (t_s Ast.null_pos t); assert false (* FIXME it seems that a cl_types will never be anything other than cl.cl_types. I'll take the risk and fail if not, just to see if that confirms *)
-				) [] cl_types in
+						| _ -> trace (t_s Ast.null_pos t); assert false (* FIXME it seems that a cl_params will never be anything other than cl.cl_params. I'll take the risk and fail if not, just to see if that confirms *)
+				) [] cl_params in
 				(params, String.concat " " params_extends)
+	in
+
+	let write_parts w parts =
+		let parts = List.filter (fun s -> s <> "") parts in
+		write w (String.concat " " parts)
 	in
 
 	let rec gen_class_field w ?(is_overload=false) is_static cl is_final cf =
@@ -1440,7 +1716,7 @@ let configure gen =
 			| "new" -> snd cl.cl_path, true, false
 			| name when String.contains name '.' ->
 				let fn_name, path = parse_explicit_iface name in
-				(path_s path) ^ "." ^ fn_name, false, true
+				(path_s path cl.cl_meta) ^ "." ^ fn_name, false, true
 			| name -> name, false, false
 		in
 		(match cf.cf_kind with
@@ -1450,7 +1726,7 @@ let configure gen =
 					gen.gcon.error "Only normal (non-dynamic) methods can be overloaded" cf.cf_pos);
 				if not is_interface then begin
 					let access, modifiers = get_fun_modifiers cf.cf_meta "public" [] in
-					print w "%s %s%s %s %s" access (if is_static then "static " else "") (String.concat " " modifiers) (t_s cf.cf_pos (run_follow gen cf.cf_type)) (change_field name);
+					write_parts w (access :: (if is_static then "static" else "") :: modifiers @ [(t_s cf.cf_pos (run_follow gen cf.cf_type)); (change_field name)]);
 					(match cf.cf_expr with
 						| Some e ->
 								write w " = ";
@@ -1475,9 +1751,7 @@ let configure gen =
 						(match cf.cf_type with
 							| TFun([_,_,t], ret) ->
 								(match (real_type t, real_type ret) with
-									| TDynamic _, TEnum( { e_path = ([], "Bool") }, [])
 									| TDynamic _, TAbstract ({ a_path = ([], "Bool") },[])
-									| TAnon _, TEnum( { e_path = ([], "Bool") }, [])
 									| TAnon _, TAbstract ({ a_path = ([], "Bool") },[]) -> true
 									| _ -> List.memq cf cl.cl_overrides
 								)
@@ -1495,7 +1769,6 @@ let configure gen =
 						(match cf.cf_type with
 							| TFun([], ret) ->
 								(match real_type ret with
-									| TInst( { cl_path = ([], "Int") }, [])
 									| TAbstract ({ a_path = ([], "Int") },[]) ->
 										true
 									| _ -> gen.gcon.error "A hashCode() function should return an Int!" cf.cf_pos; false
@@ -1508,27 +1781,29 @@ let configure gen =
 
 				let visibility, modifiers = get_fun_modifiers cf.cf_meta visibility [] in
 				let visibility, is_virtual = if is_explicit_iface then "",false else visibility, is_virtual in
-				let v_n = if is_static then "static " else if is_override && not is_interface then "" else if not is_virtual then "final " else "" in
-				let cf_type = if is_override && not is_overload && not (Meta.has Meta.Overload cf.cf_meta) then match field_access gen (TInst(cl, List.map snd cl.cl_types)) cf.cf_name with | FClassField(_,_,_,_,_,actual_t,_) -> actual_t | _ -> assert false else cf.cf_type in
+				let v_n = if is_static then "static" else if is_override && not is_interface then "" else if not is_virtual then "final" else "" in
+				let cf_type = if is_override && not is_overload && not (Meta.has Meta.Overload cf.cf_meta) then match field_access gen (TInst(cl, List.map snd cl.cl_params)) cf.cf_name with | FClassField(_,_,_,_,_,actual_t,_) -> actual_t | _ -> assert false else cf.cf_type in
 
-				let params = List.map snd cl.cl_types in
+				let params = List.map snd cl.cl_params in
 				let ret_type, args = match follow cf_type, follow cf.cf_type with
 					| TFun (strbtl, t), TFun(rargs, _) ->
-							(apply_params cl.cl_types params (real_type t), List.map2 (fun(_,_,t) (n,o,_) -> (n,o,apply_params cl.cl_types params (real_type t))) strbtl rargs)
+							(apply_params cl.cl_params params (real_type t), List.map2 (fun(_,_,t) (n,o,_) -> (n,o,apply_params cl.cl_params params (real_type t))) strbtl rargs)
 					| _ -> assert false
 				in
 
 				(if is_override && not is_interface then write w "@Override ");
+				gen_annotations w cf.cf_meta;
 				(* public static void funcName *)
 				let params, _ = get_string_params cf.cf_params in
-				print w "%s %s%s %s %s %s" (visibility) v_n (String.concat " " modifiers) params (if is_new then "" else rett_s cf.cf_pos (run_follow gen ret_type)) (change_field name);
+
+				write_parts w (visibility :: v_n :: modifiers @ [params; (if is_new then "" else rett_s cf.cf_pos (run_follow gen ret_type)); (change_field name)]);
 
 				(* <T>(string arg1, object arg2) with T : object *)
 				(match cf.cf_expr with
 					| Some { eexpr = TFunction tf } ->
-							print w "(%s)" (String.concat ", " (List.map2 (fun (var,_) (_,_,t) -> sprintf "%s %s" (t_s cf.cf_pos (run_follow gen t)) (change_id var.v_name)) tf.tf_args args))
+							print w "(%s)" (String.concat ", " (List.map2 (fun (var,_) (_,_,t) -> sprintf "%s %s" (argt_s cf.cf_pos (run_follow gen t)) (change_id var.v_name)) tf.tf_args args))
 					| _ ->
-							print w "(%s)" (String.concat ", " (List.map (fun (name, _, t) -> sprintf "%s %s" (t_s cf.cf_pos (run_follow gen t)) (change_id name)) args))
+							print w "(%s)" (String.concat ", " (List.map (fun (name, _, t) -> sprintf "%s %s" (argt_s cf.cf_pos (run_follow gen t)) (change_id name)) args))
 				);
 				if is_interface || List.mem "native" modifiers then
 					write w ";"
@@ -1576,10 +1851,14 @@ let configure gen =
 	in
 
 	let gen_class w cl =
+		let cf_filters = [ handle_throws ] in
+		List.iter (fun f -> List.iter (f gen) cl.cl_ordered_fields) cf_filters;
+		List.iter (fun f -> List.iter (f gen) cl.cl_ordered_statics) cf_filters;
 		let should_close = match change_ns (fst cl.cl_path) with
 			| [] -> false
 			| ns ->
 				print w "package %s;" (String.concat "." (change_ns ns));
+				newline w;
 				newline w;
 				false
 		in
@@ -1608,7 +1887,7 @@ let configure gen =
 			| TAbstractDecl { a_path = ([],c) } ->
 					imports := ([],c) :: !imports
 			| _ -> ()
-		) gen.gcon.types;
+		) gen.gtypes_list;
 
 		newline w;
 		write w "@SuppressWarnings(value={";
@@ -1619,19 +1898,21 @@ let configure gen =
 		) suppress_warnings;
 		write w "})";
 		newline w;
+		gen_annotations w cl.cl_meta;
 
 		let clt, access, modifiers = get_class_modifiers cl.cl_meta (if cl.cl_interface then "interface" else "class") "public" [] in
 		let is_final = Meta.has Meta.Final cl.cl_meta in
 
-		print w "%s %s %s %s" access (String.concat " " modifiers) clt (change_clname (snd cl.cl_path));
+		write_parts w (access :: modifiers @ [clt; (change_clname (snd cl.cl_path))]);
+
 		(* type parameters *)
-		let params, _ = get_string_params cl.cl_types in
+		let params, _ = get_string_params cl.cl_params in
 		let cl_p_to_string (c,p) =
 			let p = List.map (fun t -> match follow t with
 				| TMono _ | TDynamic _ -> t_empty
 				| _ -> t) p
 			in
-			path_param_s cl.cl_pos (TClassDecl c) c.cl_path p
+			path_param_s cl.cl_pos (TClassDecl c) c.cl_path p c.cl_meta
 		in
 		print w "%s" params;
 		(if is_some cl.cl_super then print w " extends %s" (cl_p_to_string (get cl.cl_super)));
@@ -1656,7 +1937,7 @@ let configure gen =
 
 		let rec loop meta =
 			match meta with
-				| [] ->  ()
+				| [] -> ()
 				| (Meta.ClassCode, [Ast.EConst (Ast.String contents),_],_) :: tl ->
 					write w contents
 				| _ :: tl -> loop tl
@@ -1676,19 +1957,23 @@ let configure gen =
 				with | Not_found -> ()
 				);
 				write w "main();";
-				end_block w
+				end_block w;
+				newline w
 			| _ -> ()
 		);
 
 		(match cl.cl_init with
 			| None -> ()
 			| Some init ->
-				write w "static ";
-				expr_s w (mk_block init));
+				write w "static";
+				expr_s w (mk_block init);
+				newline w
+		);
+
 		(if is_some cl.cl_constructor then gen_class_field w false cl is_final (get cl.cl_constructor));
-		(if not cl.cl_interface then
-			List.iter (gen_class_field w true cl is_final) cl.cl_ordered_statics);
+		(if not cl.cl_interface then List.iter (gen_class_field w true cl is_final) cl.cl_ordered_statics);
 		List.iter (gen_class_field w false cl is_final) cl.cl_ordered_fields;
+
 		end_block w;
 		if should_close then end_block w;
 
@@ -1697,7 +1982,7 @@ let configure gen =
 			| ["haxe";"root"], _ | [], _ -> ()
 			| path ->
 					write w_header "import ";
-					write w_header (path_s path);
+					write w_header (path_s path []);
 					write w_header ";\n"
 		) !imports;
 		add_writer w w_header
@@ -1710,9 +1995,11 @@ let configure gen =
 			| ns ->
 				print w "package %s;" (String.concat "." (change_ns ns));
 				newline w;
+				newline w;
 				false
 		in
 
+		gen_annotations w e.e_meta;
 		print w "public enum %s" (change_clname (snd e.e_path));
 		begin_block w;
 		write w (String.concat ", " (List.map (change_id) e.e_names));
@@ -1722,6 +2009,7 @@ let configure gen =
 	in
 
 	let module_type_gen w md_tp =
+		Codegen.map_source_header gen.gcon (fun s -> print w "// %s\n" s);
 		match md_tp with
 			| TClassDecl cl ->
 				if not cl.cl_extern then begin
@@ -1731,7 +2019,7 @@ let configure gen =
 				end;
 				(not cl.cl_extern)
 			| TEnumDecl e ->
-				if not e.e_extern then begin
+				if not e.e_extern && not (Meta.has Meta.Class e.e_meta) then begin
 					gen_enum w e;
 					newline w;
 					newline w
@@ -1756,6 +2044,7 @@ let configure gen =
 	Hashtbl.add gen.gspecial_vars "__typeof__" true;
 	Hashtbl.add gen.gspecial_vars "__java__" true;
 	Hashtbl.add gen.gspecial_vars "__lock__" true;
+	Hashtbl.add gen.gspecial_vars "__array__" true;
 
 	gen.greal_type <- real_type;
 	gen.greal_type_param <- change_param_type;
@@ -1781,7 +2070,7 @@ let configure gen =
 			 cl.cl_super <- Option.map super_map cl.cl_super;
 			 cl.cl_implements <- List.map super_map cl.cl_implements
 		| _ -> ()
-		) gen.gcon.types;
+		) gen.gtypes_list;
 
 	let closure_t = ClosuresToClass.DoubleAndDynamicClosureImpl.get_ctx gen 6 in
 
@@ -1795,7 +2084,16 @@ let configure gen =
 
 	StubClosureImpl.configure gen (StubClosureImpl.default_implementation gen float_cl 10 (fun e _ _ -> e));*)
 
-	FixOverrides.configure gen;
+	let get_vmtype t = match real_type t with
+		| TInst({ cl_path = ["java"],"NativeArray" }, tl) -> t
+		| TInst(c,tl) -> TInst(c,List.map (fun _ -> t_dynamic) tl)
+		| TEnum(e,tl) -> TEnum(e, List.map (fun _ -> t_dynamic) tl)
+		| TType(t,tl) -> TType(t, List.map (fun _ -> t_dynamic) tl)
+		| TAbstract(a,tl) -> TAbstract(a, List.map (fun _ -> t_dynamic) tl)
+		| t -> t
+	in
+
+	FixOverrides.configure ~get_vmtype gen;
 	Normalize.configure gen ~metas:(Hashtbl.create 0);
 	AbstractImplementationFix.configure gen;
 
@@ -1803,7 +2101,9 @@ let configure gen =
 
 	ClosuresToClass.configure gen (ClosuresToClass.default_implementation closure_t (get_cl (get_type gen (["haxe";"lang"],"Function")) ));
 
-	EnumToClass.configure gen (None) false true (get_cl (get_type gen (["haxe";"lang"],"Enum")) ) false false;
+	let enum_base = (get_cl (get_type gen (["haxe";"lang"],"Enum")) ) in
+	let param_enum_base = (get_cl (get_type gen (["haxe";"lang"],"ParamEnum")) ) in
+	EnumToClass.configure gen (None) false true enum_base param_enum_base false false;
 
 	InterfaceVarsDeleteModf.configure gen;
 
@@ -1825,6 +2125,14 @@ let configure gen =
 
 	let rcf_static_find = mk_static_field_access_infer (get_cl (get_type gen (["haxe";"lang"], "FieldLookup"))) "findHash" Ast.null_pos [] in
 	(*let rcf_static_lookup = mk_static_field_access_infer (get_cl (get_type gen (["haxe";"lang"], "FieldLookup"))) "lookupHash" Ast.null_pos [] in*)
+	let get_specialized_postfix t = match t with
+		| TAbstract({a_path = [],"Float"}, _) -> "Float"
+		| TInst({cl_path = [],"String"},_) -> "String"
+		| TAnon _ | TDynamic _ -> "Dynamic"
+		| _ -> print_endline (debug_type t); assert false
+	in
+	let rcf_static_insert t = mk_static_field_access_infer (get_cl (get_type gen (["haxe";"lang"], "FieldLookup"))) ("insert" ^ get_specialized_postfix t) Ast.null_pos [] in
+	let rcf_static_remove t = mk_static_field_access_infer (get_cl (get_type gen (["haxe";"lang"], "FieldLookup"))) ("remove" ^ get_specialized_postfix t) Ast.null_pos [] in
 
 	let can_be_float t = like_float (real_type t) in
 
@@ -1836,7 +2144,7 @@ let configure gen =
 
 		let is_unsafe = { eexpr = TConst(TBool is_unsafe); etype = basic.tbool; epos = pos } in
 
-		let should_cast = match main_expr.etype with | TInst({ cl_path = ([], "Float") }, []) -> false | _ -> true in
+		let should_cast = match main_expr.etype with | TAbstract({ a_path = ([], "Float") }, []) -> false | _ -> true in
 		let infer = mk_static_field_access_infer runtime_cl fn_name field_expr.epos [] in
 		let first_args =
 			[ field_expr; { eexpr = TConst(TString field); etype = basic.tstring; epos = pos } ]
@@ -1880,9 +2188,28 @@ let configure gen =
 		mk_cast ecall.etype { ecall with eexpr = TCall(infer, call_args); etype = t_dynamic }
 	in
 
-	let rcf_ctx = ReflectionCFs.new_ctx gen closure_t object_iface false rcf_on_getset_field rcf_on_call_field (fun hash hash_array ->
-		{ hash with eexpr = TCall(rcf_static_find, [hash; hash_array]); etype=basic.tint }
-	) (fun hash -> hash ) false in
+	let rcf_ctx =
+		ReflectionCFs.new_ctx
+			gen
+			closure_t
+			object_iface
+			false
+			rcf_on_getset_field
+			rcf_on_call_field
+			(fun hash hash_array length -> { hash with eexpr = TCall(rcf_static_find, [hash; hash_array; length]); etype=basic.tint })
+			(fun hash -> hash)
+			(fun hash_array length pos value ->
+				{ hash_array with
+					eexpr = TBinop(OpAssign,
+								hash_array,
+								mk (TCall(rcf_static_insert value.etype, [hash_array; length; pos; value])) hash_array.etype hash_array.epos)
+			})
+			(fun hash_array length pos ->
+				let t = gen.gclasses.nativearray_type hash_array.etype in
+				{ hash_array with eexpr = TCall(rcf_static_remove t, [hash_array; length; pos]); etype = gen.gcon.basic.tvoid }
+			)
+			false
+		in
 
 	ReflectionCFs.UniversalBaseClass.default_config gen (get_cl (get_type gen (["haxe";"lang"],"HxObject")) ) object_iface dynamic_object;
 
@@ -1906,7 +2233,7 @@ let configure gen =
 
 	ObjectDeclMap.configure gen (ObjectDeclMap.traverse gen objdecl_fn);
 
-	InitFunction.configure gen true;
+	InitFunction.configure gen true true;
 	TArrayTransform.configure gen (TArrayTransform.default_implementation gen (
 	fun e _ ->
 		match e.eexpr with
@@ -1922,7 +2249,8 @@ let configure gen =
 	let field_is_dynamic t field =
 		match field_access_esp gen (gen.greal_type t) field with
 			| FClassField (cl,p,_,_,_,t,_) ->
-				is_dynamic (apply_params cl.cl_types p t)
+				let p = change_param_type (TClassDecl cl) p in
+				is_dynamic (apply_params cl.cl_params p t)
 			| FEnumField _ -> false
 			| _ -> true
 	in
@@ -1932,23 +2260,24 @@ let configure gen =
 		| _ -> false
 	in
 
-	let is_dynamic_expr e = is_dynamic e.etype || match e.eexpr with
-		| TField(tf, f) -> field_is_dynamic tf.etype f
-		| _ -> false
+	let is_dynamic_expr e =
+		is_dynamic e.etype || match e.eexpr with
+		| TField(tf, f) ->
+			field_is_dynamic tf.etype f
+		| _ ->
+			false
 	in
 
 	let may_nullable t = match gen.gfollow#run_f t with
 		| TType({ t_path = ([], "Null") }, [t]) ->
 			(match follow t with
 				| TInst({ cl_path = ([], "String") }, [])
-				| TInst({ cl_path = ([], "Float") }, [])
 				| TAbstract ({ a_path = ([], "Float") },[])
 				| TInst({ cl_path = (["haxe"], "Int32")}, [] )
 				| TInst({ cl_path = (["haxe"], "Int64")}, [] )
-				| TInst({ cl_path = ([], "Int") }, [])
 				| TAbstract ({ a_path = ([], "Int") },[])
-				| TEnum({ e_path = ([], "Bool") }, [])
 				| TAbstract ({ a_path = ([], "Bool") },[]) -> Some t
+				| t when is_java_basic_type t -> Some t
 				| _ -> None )
 		| _ -> None
 	in
@@ -1958,7 +2287,8 @@ let configure gen =
 
 	DynamicOperators.configure gen
 		(DynamicOperators.abstract_implementation gen (fun e -> match e.eexpr with
-			| TBinop (Ast.OpEq, e1, e2)
+			| TBinop (Ast.OpEq, e1, e2) ->
+				is_dynamic e1.etype || is_dynamic e2.etype || is_type_param e1.etype || is_type_param e2.etype
 			| TBinop (Ast.OpAdd, e1, e2)
 			| TBinop (Ast.OpNotEq, e1, e2) -> is_dynamic e1.etype || is_dynamic e2.etype || is_type_param e1.etype || is_type_param e2.etype
 			| TBinop (Ast.OpLt, e1, e2)
@@ -1966,36 +2296,30 @@ let configure gen =
 			| TBinop (Ast.OpGte, e1, e2)
 			| TBinop (Ast.OpGt, e1, e2) -> is_dynamic e.etype || is_dynamic_expr e1 || is_dynamic_expr e2 || is_string e1.etype || is_string e2.etype
 			| TBinop (_, e1, e2) -> is_dynamic e.etype || is_dynamic_expr e1 || is_dynamic_expr e2
-			| TUnop (_, _, e1) -> is_dynamic_expr e1
+			| TUnop (_, _, e1) ->
+				is_dynamic_expr e1
 			| _ -> false)
 		(fun e1 e2 ->
 			let is_null e = match e.eexpr with | TConst(TNull) | TLocal({ v_name = "__undefined__" }) -> true | _ -> false in
 
-			if is_null e1 || is_null e2 then
-				match e1.eexpr, e2.eexpr with
-					| TConst c1, TConst c2 ->
-						{ e1 with eexpr = TConst(TBool (c1 = c2)); etype = basic.tbool }
-					| _ ->
-						{ e1 with eexpr = TBinop(Ast.OpEq, e1, e2); etype = basic.tbool }
-			else begin
+			match e1.eexpr, e2.eexpr with
+				| TConst c1, TConst c2 when is_null e1 || is_null e2 ->
+					{ e1 with eexpr = TConst(TBool (c1 = c2)); etype = basic.tbool }
+				| _ when is_null e1 || is_null e2 && not (is_java_basic_type e1.etype || is_java_basic_type e2.etype) ->
+					{ e1 with eexpr = TBinop(Ast.OpEq, e1, e2); etype = basic.tbool }
+				| _ ->
 				let is_ref = match follow e1.etype, follow e2.etype with
 					| TDynamic _, _
 					| _, TDynamic _
-					| TInst({ cl_path = ([], "Float") },[]), _
 					| TAbstract ({ a_path = ([], "Float") },[]) , _
 					| TInst( { cl_path = (["haxe"], "Int32") }, [] ), _
 					| TInst( { cl_path = (["haxe"], "Int64") }, [] ), _
-					| TInst({ cl_path = ([], "Int") },[]), _
 					| TAbstract ({ a_path = ([], "Int") },[]) , _
-					| TEnum({ e_path = ([], "Bool") },[]), _
 					| TAbstract ({ a_path = ([], "Bool") },[]) , _
-					| _, TInst({ cl_path = ([], "Float") },[])
 					| _, TAbstract ({ a_path = ([], "Float") },[])
-					| _, TInst({ cl_path = ([], "Int") },[])
 					| _, TAbstract ({ a_path = ([], "Int") },[])
 					| _, TInst( { cl_path = (["haxe"], "Int32") }, [] )
 					| _, TInst( { cl_path = (["haxe"], "Int64") }, [] )
-					| _, TEnum({ e_path = ([], "Bool") },[])
 					| _, TAbstract ({ a_path = ([], "Bool") },[])
 					| TInst( { cl_kind = KTypeParameter _ }, [] ), _
 					| _, TInst( { cl_kind = KTypeParameter _ }, [] ) -> false
@@ -2004,7 +2328,6 @@ let configure gen =
 
 				let static = mk_static_field_access_infer (runtime_cl) (if is_ref then "refEq" else "eq") e1.epos [] in
 				{ eexpr = TCall(static, [e1; e2]); etype = gen.gcon.basic.tbool; epos=e1.epos }
-			end
 		)
 		(fun e e1 e2 ->
 			match may_nullable e1.etype, may_nullable e2.etype with
@@ -2051,7 +2374,7 @@ let configure gen =
 		TryCatchWrapper.traverse gen
 			(fun t -> not (is_exception (real_type t)))
 			(fun throwexpr expr ->
-				let wrap_static = mk_static_field_access (hx_exception) "wrap" (TFun([("obj",false,t_dynamic)], base_exception_t)) expr.epos in
+				let wrap_static = mk_static_field_access (hx_exception) "wrap" (TFun([("obj",false,t_dynamic)], hx_exception_t)) expr.epos in
 				{ throwexpr with eexpr = TThrow { expr with eexpr = TCall(wrap_static, [expr]); etype = hx_exception_t }; etype = gen.gcon.basic.tvoid }
 			)
 			(fun v_to_unwrap pos ->
@@ -2059,12 +2382,19 @@ let configure gen =
 				mk_field_access gen local "obj" pos
 			)
 			(fun rethrow ->
-				let wrap_static = mk_static_field_access (hx_exception) "wrap" (TFun([("obj",false,t_dynamic)], base_exception_t)) rethrow.epos in
-				{ rethrow with eexpr = TThrow { rethrow with eexpr = TCall(wrap_static, [rethrow]) }; }
+				let wrap_static = mk_static_field_access (hx_exception) "wrap" (TFun([("obj",false,t_dynamic)], hx_exception_t)) rethrow.epos in
+				{ rethrow with eexpr = TThrow { rethrow with eexpr = TCall(wrap_static, [rethrow]); etype = hx_exception_t }; }
 			)
 			(base_exception_t)
 			(hx_exception_t)
-			(fun v e -> e)
+			(fun v e ->
+
+				let exc_cl = get_cl (get_type gen (["haxe";"lang"],"Exceptions")) in
+				let exc_field = mk_static_field_access_infer exc_cl "setException" e.epos [] in
+				let esetstack = { eexpr = TCall(exc_field,[mk_local v e.epos]); etype = gen.gcon.basic.tvoid; epos = e.epos } in
+
+				Type.concat esetstack e;
+			)
 	);
 
 	let get_typeof e =
@@ -2087,7 +2417,6 @@ let configure gen =
 			| TSwitch(cond, cases, def) ->
 				(match gen.gfollow#run_f cond.etype with
 					| TInst( { cl_path = (["haxe"], "Int32") }, [] )
-					| TInst({ cl_path = ([], "Int") },[])
 					| TAbstract ({ a_path = ([], "Int") },[])
 					| TInst({ cl_path = ([], "String") },[]) ->
 						(List.exists (fun (c,_) ->
@@ -2097,8 +2426,6 @@ let configure gen =
 				)
 			| _ -> assert false
 	) true );
-
-	let native_arr_cl = get_cl ( get_type gen (["java"], "NativeArray") ) in
 
 	ExpressionUnwrap.configure gen (ExpressionUnwrap.traverse gen (fun e -> Some { eexpr = TVar(mk_temp gen "expr" e.etype, Some e); etype = gen.gcon.basic.tvoid; epos = e.epos }));
 
@@ -2122,6 +2449,7 @@ let configure gen =
 	);
 
 	DefaultArguments.configure gen (DefaultArguments.traverse gen);
+	InterfaceMetas.configure gen;
 
 	JavaSpecificSynf.configure gen (JavaSpecificSynf.traverse gen runtime_cl);
 	JavaSpecificESynf.configure gen (JavaSpecificESynf.traverse gen runtime_cl);
@@ -2134,17 +2462,21 @@ let configure gen =
 	mkdir gen.gcon.file;
 	mkdir (gen.gcon.file ^ "/src");
 
+	let out_files = ref [] in
+
 	(* add resources array *)
 	let res = ref [] in
 	Hashtbl.iter (fun name v ->
 		res := { eexpr = TConst(TString name); etype = gen.gcon.basic.tstring; epos = Ast.null_pos } :: !res;
-
+		let name = Codegen.escape_res_name name true in
 		let full_path = gen.gcon.file ^ "/src/" ^ name in
 		mkdir_from_path full_path;
 
 		let f = open_out_bin full_path in
 		output_string f v;
-		close_out f
+		close_out f;
+
+		out_files := (unique_full_path full_path) :: !out_files
 	) gen.gcon.resources;
 	(try
 		let c = get_cl (Hashtbl.find gen.gtypes (["haxe"], "Resource")) in
@@ -2156,21 +2488,23 @@ let configure gen =
 
 	TypeParams.RenameTypeParameters.run gen;
 
-	let t = Common.timer "code generation" in
+	let parts = Str.split_delim (Str.regexp "[\\/]+") gen.gcon.file in
+	mkdir_recursive "" parts;
+	generate_modules_t gen "java" "src" change_path module_gen out_files;
 
-	generate_modules_t gen "java" "src" change_path module_gen;
+	if not (Common.defined gen.gcon Define.KeepOldOutput) then
+		clean_files (gen.gcon.file ^ "/src") !out_files gen.gcon.verbose;
 
-	dump_descriptor gen ("hxjava_build.txt") path_s (fun md -> path_s (t_infos md).mt_path);
+	let path_s_desc path = path_s path [] in
+	dump_descriptor gen ("hxjava_build.txt") path_s_desc (fun md -> path_s_desc (t_infos md).mt_path);
 	if ( not (Common.defined gen.gcon Define.NoCompilation) ) then begin
 		let old_dir = Sys.getcwd() in
 		Sys.chdir gen.gcon.file;
-		let cmd = "haxelib run hxjava hxjava_build.txt --haxe-version " ^ (string_of_int gen.gcon.version) in
+		let cmd = "haxelib run hxjava hxjava_build.txt --haxe-version " ^ (string_of_int gen.gcon.version) ^ " --feature-level 1" in
 		print_endline cmd;
 		if gen.gcon.run_command cmd <> 0 then failwith "Build failed";
 		Sys.chdir old_dir;
-	end;
-
-	t()
+	end
 
 (* end of configure function *)
 
@@ -2204,11 +2538,13 @@ let generate con =
 
 	let basic = con.basic in
 	(* make the basic functions in java *)
+	let cl_cl = get_cl (get_type gen (["java";"lang"],"Class")) in
 	let basic_fns =
 	[
 		mk_class_field "equals" (TFun(["obj",false,t_dynamic], basic.tbool)) true Ast.null_pos (Method MethNormal) [];
 		mk_class_field "toString" (TFun([], basic.tstring)) true Ast.null_pos (Method MethNormal) [];
 		mk_class_field "hashCode" (TFun([], basic.tint)) true Ast.null_pos (Method MethNormal) [];
+		mk_class_field "getClass" (TFun([], (TInst(cl_cl,[t_dynamic])))) true Ast.null_pos (Method MethNormal) [];
 		mk_class_field "wait" (TFun([], basic.tvoid)) true Ast.null_pos (Method MethNormal) [];
 		mk_class_field "notify" (TFun([], basic.tvoid)) true Ast.null_pos (Method MethNormal) [];
 		mk_class_field "notifyAll" (TFun([], basic.tvoid)) true Ast.null_pos (Method MethNormal) [];
@@ -2234,6 +2570,10 @@ exception ConversionError of string * pos
 
 let error s p = raise (ConversionError (s, p))
 
+let is_haxe_keyword = function
+	| "callback" | "cast" | "extern" | "function" | "in" | "typedef" | "using" | "var" | "untyped" | "inline" -> true
+	| _ -> false
+
 let jname_to_hx name =
 	let name =
 		if name <> "" && (String.get name 0 < 'A' || String.get name 0 > 'Z') then
@@ -2241,9 +2581,7 @@ let jname_to_hx name =
 		else
 			name
 	in
-	(* handle non-inner classes with same final name as non-inner *)
 	let name = String.concat "__" (String.nsplit name "_") in
-	(* handle with inner classes *)
 	String.map (function | '$' -> '_' | c -> c) name
 
 let normalize_pack pack =
@@ -2263,21 +2601,6 @@ let jpath_to_hx (pack,name) = match pack, name with
 	| "sunw" :: _, _ -> "java" :: normalize_pack pack, jname_to_hx name
 	| pack, name -> normalize_pack pack, jname_to_hx name
 
-let hxname_to_j name =
-	let name = String.implode (List.rev (String.explode name)) in
-	let fl = String.nsplit name "__" in
-	let fl = List.map (String.map (fun c -> if c = '_' then '$' else c)) fl in
-	let ret = String.concat "_" fl in
-	String.implode (List.rev (String.explode ret))
-
-let hxpath_to_j (pack,name) = match pack, name with
-	| "java" :: "com" :: ("oracle" | "sun") :: _, _
-	| "java" :: "javax" :: _, _
-	| "java" :: "org" :: ("ietf" | "jcp" | "omg" | "w3c" | "xml") :: _, _
-	| "java" :: "sun" :: _, _
-	| "java" :: "sunw" :: _, _ -> List.tl pack, hxname_to_j name
-	| pack, name -> pack, hxname_to_j name
-
 let real_java_path ctx (pack,name) =
 	path_s (pack, name)
 
@@ -2293,11 +2616,27 @@ let mk_type_path ctx path params =
 	let name, sub = try
 		let p, _ = String.split (snd path) "$" in
 		jname_to_hx p, Some (jname_to_hx (snd path))
-	with | Invalid_string ->
-		jname_to_hx (snd path), None
+		with | Invalid_string ->
+			jname_to_hx (snd path), None
+	in
+	let pack = fst (jpath_to_hx path) in
+	let pack, sub, name = match path with
+		| [], ("Float" as c)
+		| [], ("Int" as c)
+		| [], ("Single" as c)
+		| [], ("Bool" as c)
+		| [], ("Dynamic" as c)
+		| [], ("Iterator" as c)
+		| [], ("ArrayAccess" as c)
+		| [], ("Iterable" as c) ->
+			[], Some c, "StdTypes"
+		| [], ("String" as c) ->
+			["std"], None, c
+		| _ ->
+			pack, sub, name
 	in
 	CTPath {
-		tpackage = fst (jpath_to_hx path);
+		tpackage = pack;
 		tname = name;
 		tparams = params;
 		tsub = sub;
@@ -2322,17 +2661,19 @@ and convert_signature ctx p jsig =
 	| TBool -> mk_type_path ctx ([], "Bool") []
 	| TObject ( (["haxe";"root"], name), args ) -> mk_type_path ctx ([], name) (List.map (convert_arg ctx p) args)
 	(** nullable types *)
-	| TObject ( (["java";"lang"], "Integer"), [] ) -> mk_type_path ctx ([], "Null") [ TPType (mk_type_path ctx ([], "Int") []) ]
-	| TObject ( (["java";"lang"], "Double"), [] ) -> mk_type_path ctx ([], "Null") [ TPType (mk_type_path ctx ([], "Float") []) ]
-	| TObject ( (["java";"lang"], "Single"), [] ) -> mk_type_path ctx ([], "Null") [ TPType (mk_type_path ctx ([], "Single") []) ]
-	| TObject ( (["java";"lang"], "Boolean"), [] ) -> mk_type_path ctx ([], "Null") [ TPType (mk_type_path ctx ([], "Bool") []) ]
-	| TObject ( (["java";"lang"], "Byte"), [] ) -> mk_type_path ctx ([], "Null") [ TPType (mk_type_path ctx (["java";"types"], "Int8") []) ]
-	| TObject ( (["java";"lang"], "Character"), [] ) -> mk_type_path ctx ([], "Null") [ TPType (mk_type_path ctx (["java";"types"], "Char16") []) ]
-	| TObject ( (["java";"lang"], "Short"), [] ) -> mk_type_path ctx ([], "Null") [ TPType (mk_type_path ctx (["java";"types"], "Int16") []) ]
-	| TObject ( (["java";"lang"], "Long"), [] ) -> mk_type_path ctx ([], "Null") [ TPType (mk_type_path ctx (["haxe"], "Int64") []) ]
+	(* replaced from Null<Type> to the actual abstract type to fix #2738 *)
+	(* | TObject ( (["java";"lang"], "Integer"), [] ) -> mk_type_path ctx ([], "Null") [ TPType (mk_type_path ctx ([], "Int") []) ] *)
+	(* | TObject ( (["java";"lang"], "Double"), [] ) -> mk_type_path ctx ([], "Null") [ TPType (mk_type_path ctx ([], "Float") []) ] *)
+	(* | TObject ( (["java";"lang"], "Float"), [] ) -> mk_type_path ctx ([], "Null") [ TPType (mk_type_path ctx ([], "Single") []) ] *)
+	(* | TObject ( (["java";"lang"], "Boolean"), [] ) -> mk_type_path ctx ([], "Null") [ TPType (mk_type_path ctx ([], "Bool") []) ] *)
+	(* | TObject ( (["java";"lang"], "Byte"), [] ) -> mk_type_path ctx ([], "Null") [ TPType (mk_type_path ctx (["java";"types"], "Int8") []) ] *)
+	(* | TObject ( (["java";"lang"], "Character"), [] ) -> mk_type_path ctx ([], "Null") [ TPType (mk_type_path ctx (["java";"types"], "Char16") []) ] *)
+	(* | TObject ( (["java";"lang"], "Short"), [] ) -> mk_type_path ctx ([], "Null") [ TPType (mk_type_path ctx (["java";"types"], "Int16") []) ] *)
+	(* | TObject ( (["java";"lang"], "Long"), [] ) -> mk_type_path ctx ([], "Null") [ TPType (mk_type_path ctx (["haxe"], "Int64") []) ] *)
 	(** other std types *)
 	| TObject ( (["java";"lang"], "Object"), [] ) -> mk_type_path ctx ([], "Dynamic") []
 	| TObject ( (["java";"lang"], "String"), [] ) -> mk_type_path ctx ([], "String") []
+	| TObject ( (["java";"lang"], "Enum"), [_] ) -> mk_type_path ctx ([], "EnumValue") []
 	(** other types *)
 	| TObject ( path, [] ) ->
 		(match lookup_jclass ctx.jcom path with
@@ -2387,6 +2728,7 @@ let convert_param ctx p parent param =
 			tp_name = name;
 			tp_params = [];
 			tp_constraints = List.map (convert_signature ctx p) constraints;
+			tp_meta = [];
 		}
 
 let get_type_path ctx ct = match ct with | CTPath p -> p | _ -> assert false
@@ -2400,8 +2742,11 @@ let mk_override field =
 let del_override field =
 	{ field with jf_attributes = List.filter (fun a -> not (is_override_attrib a)) field.jf_attributes }
 
+let get_canonical ctx p pack name =
+	(Meta.JavaCanonical, [EConst (String (String.concat "." pack)), p; EConst (String name), p], p)
+
 let convert_java_enum ctx p pe =
-	let meta = ref [Meta.Native, [EConst (String (real_java_path ctx pe.cpath) ), p], p ] in
+	let meta = ref (get_canonical ctx p (fst pe.cpath) (snd pe.cpath) :: [Meta.Native, [EConst (String (real_java_path ctx pe.cpath) ), p], p ]) in
 	let data = ref [] in
 	List.iter (fun f ->
 		(* if List.mem JEnum f.jf_flags then *)
@@ -2471,6 +2816,13 @@ let convert_java_enum ctx p pe =
 			| _ -> ()
 		) field.jf_attributes;
 
+		List.iter (fun jsig ->
+			match convert_signature ctx p jsig with
+				| CTPath path ->
+					cff_meta := (Meta.Throws, [Ast.EConst (Ast.String (path_s (path.tpackage,path.tname))), p],p) :: !cff_meta
+				| _ -> ()
+		) field.jf_throws;
+
 		let kind = match field.jf_kind with
 			| JKField when !readonly ->
 				FProp ("default", "null", Some (convert_signature ctx p field.jf_signature), None)
@@ -2497,12 +2849,14 @@ let convert_java_enum ctx p pe =
 								tp_name = name;
 								tp_params = [];
 								tp_constraints = List.map (convert_signature ctx p) (ext :: impl);
+								tp_meta = [];
 							}
 						| (name, None, impl) ->
 							{
 								tp_name = name;
 								tp_params = [];
 								tp_constraints = List.map (convert_signature ctx p) (impl);
+								tp_meta = [];
 							}
 					) field.jf_types in
 					ctx.jtparams <- old_types;
@@ -2516,13 +2870,25 @@ let convert_java_enum ctx p pe =
 				| _ -> error "Method signature was expected" p
 		in
 		let cff_name, cff_meta =
-			if String.get cff_name 0 = '%' then
-				let name = (String.sub cff_name 1 (String.length cff_name - 1)) in
-				"_" ^ name,
-				(Meta.Native, [EConst (String (name) ), cff_pos], cff_pos) :: !cff_meta
-			else
-				cff_name, !cff_meta
+			match String.get cff_name 0 with
+				| '%' ->
+					let name = (String.sub cff_name 1 (String.length cff_name - 1)) in
+					if not (is_haxe_keyword name) then
+						cff_meta := (Meta.Deprecated, [EConst(String(
+							"This static field `_" ^ name ^ "` is deprecated and will be removed in later versions. Please use `" ^ name ^ "` instead")
+						),p], p) :: !cff_meta;
+					"_" ^ name,
+					(Meta.Native, [EConst (String (name) ), cff_pos], cff_pos) :: !cff_meta
+				| _ ->
+					match String.nsplit cff_name "$" with
+						| [ no_dollar ] ->
+							cff_name, !cff_meta
+						| parts ->
+							String.concat "_" parts,
+							(Meta.Native, [EConst (String (cff_name) ), cff_pos], cff_pos) :: !cff_meta
 		in
+		if PMap.mem "java_loader_debug" ctx.jcom.defines then
+			Printf.printf "\t%s%sfield %s : %s\n" (if List.mem AStatic !cff_access then "static " else "") (if List.mem AOverride !cff_access then "override " else "") cff_name (s_sig field.jf_signature);
 
 		{
 			cff_name = cff_name;
@@ -2560,11 +2926,18 @@ let convert_java_enum ctx p pe =
 	let convert_java_class ctx p jc =
 		match List.mem JEnum jc.cflags with
 		| true -> (* is enum *)
-			convert_java_enum ctx p jc
+				[convert_java_enum ctx p jc]
 		| false ->
 			let flags = ref [HExtern] in
+			if PMap.mem "java_loader_debug" ctx.jcom.defines then begin
+				let sup = jc.csuper :: jc.cinterfaces in
+				print_endline ("converting " ^ (if List.mem JAbstract jc.cflags then "abstract " else "") ^ JData.path_s jc.cpath ^ " : " ^ (String.concat ", " (List.map s_sig sup)));
+			end;
 			(* todo: instead of JavaNative, use more specific definitions *)
-			let meta = ref [Meta.JavaNative, [], p; Meta.Native, [EConst (String (real_java_path ctx jc.cpath) ), p], p] in
+			let meta = ref [Meta.JavaNative, [], p; Meta.Native, [EConst (String (real_java_path ctx jc.cpath) ), p], p; get_canonical ctx p (fst jc.cpath) (snd jc.cpath)] in
+			let force_check = Common.defined ctx.jcom Define.ForceLibCheck in
+			if not force_check then
+				meta := (Meta.LibType,[],p) :: !meta;
 
 			let is_interface = ref false in
 			List.iter (fun f -> match f with
@@ -2609,14 +2982,25 @@ let convert_java_enum ctx p pe =
 						| Exit -> ()
 				) (jc.cfields @ jc.cmethods);
 
-			EClass {
+			(* make sure the throws types are imported correctly *)
+			let imports = List.concat (List.map (fun f ->
+				List.map (fun jsig ->
+					match convert_signature ctx p jsig with
+						| CTPath path ->
+							let pos = { p with pfile = p.pfile ^ " (" ^ f.jf_name ^" @:throws)" } in
+							EImport( List.map (fun s -> s,pos) (path.tpackage @ [path.tname]), INormal )
+						| _ -> assert false
+				) f.jf_throws
+			) jc.cmethods) in
+
+			(EClass {
 				d_name = jname_to_hx (snd jc.cpath);
 				d_doc = None;
 				d_params = List.map (convert_param ctx p jc.cpath) jc.ctypes;
 				d_meta = !meta;
 				d_flags = !flags;
 				d_data = !fields;
-			}
+			}) :: imports
 
 	let create_ctx com =
 		{
@@ -2790,10 +3174,8 @@ let compare_type com s1 s2 =
 				let implements = List.map (japply_params jparams) c.cinterfaces in
 				loop ~first_error:first_error super s2 || List.exists (fun super -> loop ~first_error:first_error super s2) implements
 			with | Not_found ->
-				if com.verbose then begin
-					prerr_endline ("-java-lib: The type " ^ (s_sig s1) ^ " is referred but was not found. Compilation may not occur correctly.");
-					prerr_endline "Did you forget to include a needed lib?"
-				end;
+				prerr_endline ("-java-lib: The type " ^ (s_sig s1) ^ " is referred but was not found. Compilation may not occur correctly.");
+				prerr_endline "Did you forget to include a needed lib?";
 				if first_error then
 					not (loop ~first_error:false s2 s1)
 				else
@@ -2848,62 +3230,70 @@ let select_best com flist =
 		| f :: [] -> Some f
 		| f :: flist -> Some f (* pick one *)
 
-let normalize_jclass com cls =
-	(* search static / non-static name clash *)
-	let nonstatics = ref [] in
-	List.iter (fun f ->
-		if not(List.mem JStatic f.jf_flags) then nonstatics := f :: !nonstatics
-	) (cls.cfields @ cls.cmethods);
-	(* we won't be able to deal correctly with field's type parameters *)
-	(* since java sometimes overrides / implements crude (ie no type parameters) versions *)
-	(* and interchanges between them *)
-	(* let methods = List.map (fun f -> let f = del_override f in  if f.jf_types <> [] then { f with jf_types = []; jf_signature = f.jf_vmsignature } else f ) cls.cmethods in *)
-	(* let pth = path_s cls.cpath in *)
-	let methods = List.map (fun f -> del_override f ) cls.cmethods in
-	(* take off duplicate overload signature class fields from current class *)
-	let cmethods = ref methods in
-	let all_methods = ref methods in
-	let all_fields = ref cls.cfields in
-	let super_fields = ref [] in
-	let super_methods = ref [] in
-	(* fix overrides *)
-	let rec loop cls = try
+(**** begin normalize_jclass helpers ****)
+
+let fix_overrides_jclass com cls =
+	let force_check = Common.defined com Define.ForceLibCheck in
+	let methods = if force_check then List.map (fun f -> del_override f) cls.cmethods else cls.cmethods in
+	let cmethods = methods in
+	let super_fields = [] in
+	let super_methods = [] in
+	let nonstatics = List.filter (fun f -> not (List.mem JStatic f.jf_flags)) (cls.cfields @ cls.cmethods) in
+
+	let is_pub = fun f -> List.exists (function | JPublic | JProtected -> true | _ -> false) f.jf_flags in
+	let cmethods, super_fields = if not (List.mem JInterface cls.cflags) then
+		List.filter is_pub cmethods,
+		List.filter is_pub super_fields
+	else
+		cmethods,super_fields
+	in
+
+	let rec loop cls super_methods super_fields cmethods nonstatics = try
 		match cls.csuper with
-		| TObject((["java";"lang"],"Object"),_) -> ()
+		| TObject((["java";"lang"],"Object"),_) ->
+				super_methods,super_fields,cmethods,nonstatics
 		| _ ->
 			let cls, params = jcl_from_jsig com cls.csuper in
 			let cls = jclass_with_params com cls params in
-			List.iter (fun f -> if not (List.mem JStatic f.jf_flags) then nonstatics := f :: !nonstatics) (cls.cfields @ cls.cmethods);
-			super_methods := cls.cmethods @ !super_methods;
-			all_methods := cls.cmethods @ !all_methods;
-			all_fields := cls.cfields @ !all_fields;
-			super_fields := cls.cfields @ !super_fields;
-			let overriden = ref [] in
-			cmethods := List.map (fun jm ->
-				(* TODO rewrite/standardize empty spaces *)
-				if not (is_override jm) && not(List.mem JStatic jm.jf_flags) && List.exists (fun msup ->
-					let ret = msup.jf_name = jm.jf_name && not(List.mem JStatic msup.jf_flags) && compatible_methods msup jm in
-					if ret then begin
-						let f = mk_override msup in
-						overriden := { f with jf_flags = jm.jf_flags } :: !overriden
-					end;
-					ret
-				) cls.cmethods then
-					mk_override jm
-				else
-					jm
-			) !cmethods;
-			cmethods := !overriden @ !cmethods;
-			loop cls
-		with | Not_found -> ()
+			let nonstatics = (List.filter (fun f -> (List.mem JStatic f.jf_flags)) (cls.cfields @ cls.cmethods)) @ nonstatics in
+			let super_methods = cls.cmethods @ super_methods in
+			let super_fields = cls.cfields @ super_fields in
+			let cmethods = if force_check then begin
+				let overriden = ref [] in
+				let cmethods = List.map (fun jm ->
+					(* TODO rewrite/standardize empty spaces *)
+					if not (is_override jm) && not (List.mem JStatic jm.jf_flags) && List.exists (fun msup ->
+						let ret = msup.jf_name = jm.jf_name && not(List.mem JStatic msup.jf_flags) && compatible_methods msup jm in
+						if ret then begin
+							let f = mk_override msup in
+							overriden := { f with jf_flags = jm.jf_flags } :: !overriden
+						end;
+						ret
+					) cls.cmethods then
+						mk_override jm
+					else
+						jm
+				) cmethods in
+				!overriden @ cmethods
+			end else
+				cmethods
+			in
+			loop cls super_methods super_fields cmethods nonstatics
+		with | Not_found ->
+			super_methods,super_fields,cmethods,nonstatics
 	in
-	if not (List.mem JInterface cls.cflags) then begin
-		cmethods := List.filter (fun f -> List.exists (function | JPublic | JProtected -> true | _ -> false) f.jf_flags) !cmethods;
-		all_fields := List.filter (fun f -> List.exists (function | JPublic | JProtected -> true | _ -> false) f.jf_flags) !all_fields;
-		super_fields := List.filter (fun f -> List.exists (function | JPublic | JProtected -> true | _ -> false) f.jf_flags) !super_fields;
-	end;
-	loop cls;
+	loop cls super_methods super_fields cmethods nonstatics
+
+let normalize_jclass com cls =
+	(* after adding the noCheck metadata, this option will annotate what changes were needed *)
+	(* and that are now deprecated *)
+	let force_check = Common.defined com Define.ForceLibCheck in
+	(* fix overrides *)
+	let super_methods, super_fields, cmethods, nonstatics = fix_overrides_jclass com cls in
+	let all_methods = cmethods @ super_methods in
+
 	(* look for interfaces and add missing implementations (may happen on abstracts or by vmsig differences *)
+	(* (libType): even with libType enabled, we need to add these missing fields - otherwise we won't be able to use them from Haxe *)
 	let added_interface_fields = ref [] in
 	let rec loop_interface abstract cls iface = try
 		match iface with
@@ -2913,53 +3303,62 @@ let normalize_jclass com cls =
 				let cif, params = jcl_from_jsig com iface in
 				let cif = jclass_with_params com cif params in
 				List.iter (fun jf ->
-					if not(List.mem JStatic jf.jf_flags) && not (List.exists (fun jf2 -> jf.jf_name = jf2.jf_name && not (List.mem JStatic jf2.jf_flags) && jf.jf_signature = jf2.jf_signature) !all_methods) then begin
-						let jf = if abstract then del_override jf else jf in
+					if not(List.mem JStatic jf.jf_flags) && not (List.exists (fun jf2 -> jf.jf_name = jf2.jf_name && not (List.mem JStatic jf2.jf_flags) && jf.jf_signature = jf2.jf_signature) all_methods) then begin
+						let jf = if abstract && force_check then del_override jf else jf in
 						let jf = { jf with jf_flags = JPublic :: jf.jf_flags } in (* interfaces implementations are always public *)
 
 						added_interface_fields := jf :: !added_interface_fields;
-						cmethods := jf :: !cmethods;
-						all_methods := jf :: !all_methods;
-						nonstatics := jf :: !nonstatics;
 					end
 				) cif.cmethods;
-				List.iter (loop_interface abstract cif) cif.cinterfaces;
+				(* we don't need to loop again in the interface unless we are in an abstract class, since these interfaces are already normalized *)
+				if abstract then List.iter (loop_interface abstract cif) cif.cinterfaces;
 		with Not_found -> ()
 	in
-	(* another pass: *)
-	(* if List.mem JAbstract cls.cflags then List.iter loop_interface cls.cinterfaces; *)
-	(* if not (List.mem JInterface cls.cflags) then *)
 	List.iter (loop_interface (List.mem JAbstract cls.cflags) cls) cls.cinterfaces;
+	let nonstatics = !added_interface_fields @ nonstatics in
+	let cmethods = !added_interface_fields @ cmethods in
+
 	(* for each added field in the interface, lookup in super_methods possible methods to include *)
 	(* so we can choose the better method still *)
+	let cmethods = if not force_check then
+		cmethods
+	else
+		List.fold_left (fun cmethods im ->
+			(* see if any of the added_interface_fields need to be declared as override *)
+			let f = List.find_all (fun jf -> jf.jf_name = im.jf_name && compatible_methods jf im) super_methods in
+			let f = List.map mk_override f in
+			f @ cmethods
+		) cmethods !added_interface_fields;
+	in
 
-	List.iter (fun im ->
-		let f = List.find_all (fun jf -> jf.jf_name = im.jf_name && compatible_methods jf im) !super_methods in
-		let f = List.map mk_override f in
-		cmethods := f @ !cmethods
-	) !added_interface_fields;
 	(* take off equals, hashCode and toString from interface *)
-	if List.mem JInterface cls.cflags then cmethods := List.filter (fun jf -> match jf.jf_name, jf.jf_vmsignature with
+	let cmethods = if List.mem JInterface cls.cflags then List.filter (fun jf -> match jf.jf_name, jf.jf_vmsignature with
 			| "equals", TMethod([TObject( (["java";"lang"],"Object"), _)],_)
 			| "hashCode", TMethod([], _)
 			| "toString", TMethod([], _) -> false
 			| _ -> true
-	) !cmethods;
-	(* change field name to not collide with haxe keywords *)
-	let map_field f =
-		let change = match f.jf_name with
-		| "callback" | "cast" | "extern" | "function" | "in" | "typedef" | "using" | "var" | "untyped" | "inline" -> true
-		| _ when List.mem JStatic f.jf_flags && List.exists (fun f2 -> f.jf_name = f2.jf_name) !nonstatics -> true
-		| _ -> false
-		in
-		if change then
-			{ f with jf_name = "%" ^ f.jf_name }
-		else
-			f
+	) cmethods
+	else
+		cmethods
 	in
+
+	(* change field name to not collide with haxe keywords and with static/non-static members *)
+	let fold_field acc f =
+		let change, both = match f.jf_name with
+		| _ when List.mem JStatic f.jf_flags && List.exists (fun f2 -> f.jf_name = f2.jf_name) nonstatics -> true, true
+		| _ -> is_haxe_keyword f.jf_name, false
+		in
+		let f2 = if change then
+				{ f with jf_name = "%" ^ f.jf_name }
+			else
+				f
+		in
+		if both then f :: f2 :: acc else f2 :: acc
+	in
+
 	(* change static fields that have the same name as methods *)
-	let cfields = List.map map_field cls.cfields in
-	let cmethods = List.map map_field !cmethods in
+	let cfields = List.fold_left fold_field [] cls.cfields in
+	let cmethods = List.fold_left fold_field [] cmethods in
 	(* take off variable fields that have the same name as methods *)
 	(* and take off variables that already have been declared *)
 	let filter_field f f2 = f != f2 && (List.mem JStatic f.jf_flags = List.mem JStatic f2.jf_flags) && f.jf_name = f2.jf_name && f2.jf_kind <> f.jf_kind in
@@ -2967,14 +3366,16 @@ let normalize_jclass com cls =
 		if List.mem JStatic f.jf_flags then
 			not (List.exists (filter_field f) cmethods)
 		else
-			not (List.exists (filter_field f) !nonstatics) && not (List.exists (fun f2 -> f != f2 && f.jf_name = f2.jf_name && not (List.mem JStatic f2.jf_flags)) !all_fields) ) cfields
+			not (List.exists (filter_field f) nonstatics) && not (List.exists (fun f2 -> f != f2 && f.jf_name = f2.jf_name && not (List.mem JStatic f2.jf_flags)) super_fields) ) cfields
 	in
 	(* now filter any method that clashes with a field - on a superclass *)
-	let cmethods = List.filter (fun f ->
+	let cmethods = if force_check then List.filter (fun f ->
 		if List.mem JStatic f.jf_flags then
 			true
 		else
-			not (List.exists (filter_field f) !super_fields) ) cmethods
+			not (List.exists (filter_field f) super_fields) ) cmethods
+	else
+		cmethods
 	in
 	(* removing duplicate fields. They are there because of return type covariance in Java *)
 	(* Also, if a method overrides a previous definition, and changes a type parameters' variance, *)
@@ -2998,24 +3399,18 @@ let normalize_jclass com cls =
 	let cmethods = loop [] cmethods in
 	{ cls with cfields = cfields; cmethods = cmethods }
 
-let rec get_classes_dir pack dir ret =
-	Array.iter (fun f -> match (Unix.stat (dir ^"/"^ f)).st_kind with
-		| S_DIR ->
-				get_classes_dir (pack @ [f]) (dir ^"/"^ f) ret
-		| _ when (String.sub (String.uncapitalize f) (String.length f - 6) 6) = ".class" ->
-				let path = jpath_to_hx (pack,f) in
-				ret := path :: !ret;
-		| _ -> ()
-	) (Sys.readdir dir)
+(**** end normalize_jclass helpers ****)
 
 let get_classes_zip zip =
 	let ret = ref [] in
 	List.iter (function
-		| { Zip.is_directory = false; Zip.filename = f } when (String.sub (String.uncapitalize f) (String.length f - 6) 6) = ".class" ->
+		| { Zip.is_directory = false; Zip.filename = f } when (String.sub (String.uncapitalize f) (String.length f - 6) 6) = ".class" && not (String.exists f "$") ->
 				(match List.rev (String.nsplit f "/") with
 				| clsname :: pack ->
-						let path = jpath_to_hx (List.rev pack, clsname) in
+					if not (String.contains clsname '$') then begin
+						let path = jpath_to_hx (List.rev pack, String.sub clsname 0 (String.length clsname - 6)) in
 						ret := path :: !ret
+					end
 				| _ ->
 						ret := ([], jname_to_hx f) :: !ret)
 		| _ -> ()
@@ -3035,29 +3430,32 @@ let add_java_lib com file std =
 		(* check if it is a directory or jar file *)
 		match (Unix.stat file).st_kind with
 		| S_DIR -> (* open classes directly from directory *)
+			let all = ref [] in
 			let rec iter_files pack dir path = try
 				let file = Unix.readdir dir in
-				(if String.ends_with file ".class" then
+				let filepath = path ^ "/" ^ file in
+				(if String.ends_with file ".class" && not (String.exists file "$") then
 					let file = String.sub file 0 (String.length file - 6) in
-					Hashtbl.add hxpack_to_jpack (jpath_to_hx(pack,file)) (pack,file)
-				else if (Unix.stat file).st_kind = S_DIR && file <> "." && file <> ".." then
-					let path = path ^"/"^ file in
+					let path = jpath_to_hx (pack,file) in
+					all := path :: !all;
+					Hashtbl.add hxpack_to_jpack path (pack,file)
+				else if (Unix.stat filepath).st_kind = S_DIR && file <> "." && file <> ".." then
 					let pack = pack @ [file] in
-					iter_files (pack @ [file]) (Unix.opendir path) path);
+					iter_files (pack) (Unix.opendir filepath) filepath);
 				iter_files pack dir path
 			with | End_of_file | Unix.Unix_error _ ->
 				Unix.closedir dir
 			in
 			iter_files [] (Unix.opendir file) file;
+			let all = !all in
 
 			(fun (pack, name) ->
-				(* let pack, name = hxpath_to_j (pack,name) in *)
 				let real_path = file ^ "/" ^ (String.concat "/" pack) ^ "/" ^ (name ^ ".class") in
 				try
 					let data = Std.input_file ~bin:true real_path in
 					Some(JReader.parse_class (IO.input_string data), real_path, real_path)
 				with
-					| _ -> None), (fun () -> ()), (fun () -> let ret = ref [] in get_classes_dir [] file ret; !ret)
+					| _ -> None), (fun () -> ()), (fun () -> all)
 		| _ -> (* open zip file *)
 			let closed = ref false in
 			let zip = ref (Zip.open_in file) in
@@ -3080,7 +3478,6 @@ let add_java_lib com file std =
 				| _ -> ()
 			) (Zip.entries !zip);
 			(fun (pack, name) ->
-				(* let pack, name = hxpath_to_j (pack,name) in *)
 				check_open();
 				try
 					let location = (String.concat "/" (pack @ [name]) ^ ".class") in
@@ -3097,8 +3494,8 @@ let add_java_lib com file std =
 	let get_raw_class path =
 		try
 			Hashtbl.find cached_types path
-		with | Not_found ->
-			let pack, name = hxpath_to_j path in
+		with | Not_found -> try
+			let pack, name = Hashtbl.find hxpack_to_jpack path in
 			let try_file (pack,name) =
 				match get_raw_class (pack,name) with
 				| None ->
@@ -3110,71 +3507,150 @@ let add_java_lib com file std =
 						Hashtbl.replace cached_types path ret;
 						ret
 			in
-			let ret = try_file (pack,name) in
-			if ret = None && Hashtbl.mem hxpack_to_jpack path then
-				try_file (Hashtbl.find hxpack_to_jpack path)
+			try_file (pack,name)
+		with Not_found ->
+			None
+	in
+	let replace_canonical_name p pack name_original name_replace decl =
+		let mk_meta name = (Meta.JavaCanonical, [EConst (String (String.concat "." pack)), p; EConst(String name), p], p) in
+		let add_meta name metas =
+			if Meta.has Meta.JavaCanonical metas then
+				List.map (function
+					| (Meta.JavaCanonical,[EConst (String cpack), _; EConst(String cname), _],_) ->
+						let did_replace,name = String.replace cname name_original name_replace in
+						if not did_replace then print_endline (cname ^ " -> " ^ name_original ^ " -> " ^ name_replace);
+						mk_meta name
+					| m -> m
+				) metas
 			else
-				ret
+				mk_meta name :: metas
+		in
+		match decl with
+			| EClass c ->
+				EClass { c with d_meta = add_meta c.d_name c.d_meta }
+			| EEnum e ->
+				EEnum { e with d_meta = add_meta e.d_name e.d_meta }
+			| EAbstract a ->
+				EAbstract { a with d_meta = add_meta a.d_name a.d_meta }
+			| d -> d
 	in
 	let rec build ctx path p types =
 		try
 			if List.mem path !types then
 				None
 			else begin
+				let first = match !types with
+					| [ ["java";"lang"], "String" ] | [] -> true
+					| p :: _ ->
+						false
+				in
 				types := path :: !types;
 				match get_raw_class path, path with
 				| None, ([], c) -> build ctx (["haxe";"root"], c) p types
 				| None, _ -> None
 				| Some (cls, real_path, pos_path), _ ->
-						if com.verbose then print_endline ("Parsed Java class " ^ (path_s cls.cpath));
-						let old_types = ctx.jtparams in
-						ctx.jtparams <- cls.ctypes :: ctx.jtparams;
-
-						let pos = { pfile = pos_path; pmin = 0; pmax = 0; } in
-
-						let pack = match fst path with | ["haxe";"root"] -> [] | p -> p in
-
-						let ppath = hxpath_to_j path in
-						let inner = List.fold_left (fun acc (path,out,_,_) ->
-							let path = jpath_to_hx path in
-							(if out <> Some ppath then
-								acc
-							else match build ctx path p types with
-								| Some(_,(_, classes)) ->
-										classes @ acc
-								| _ -> acc);
-						) [] cls.cinner_types in
-
-						(* build anonymous classes also *
-						let rec loop inner n =
-							match build ctx (fst path, snd path ^ "$" ^ (string_of_int n)) p types with
-							| Some(_,(_, classes)) ->
-									loop (classes @ inner) (n + 1)
-							| _ -> inner
+						let is_disallowed_inner = first && String.exists (snd cls.cpath) "$" in
+						let is_disallowed_inner = if is_disallowed_inner then begin
+								let outer, inner = String.split (snd cls.cpath) "$" in
+								match get_raw_class (fst path, outer) with
+									| None -> false
+									| _ -> true
+							end else
+								false
 						in
-						let inner = loop inner 1 in*)
-						(* add _Statics class *)
-						let inner = try
-							if not (List.mem JInterface cls.cflags) then raise Not_found;
-							let smethods = List.filter (fun f -> List.mem JStatic f.jf_flags) cls.cmethods in
-							let sfields = List.filter (fun f -> List.mem JStatic f.jf_flags) cls.cfields in
-							if not (smethods <> [] || sfields <> []) then raise Not_found;
-							let obj = TObject( (["java";"lang"],"Object"), []) in
-							let ncls = convert_java_class ctx pos { cls with cmethods = smethods; cfields = sfields; cflags = []; csuper = obj; cinterfaces = []; cinner_types = []; ctypes = [] } in
-							match ncls with
-							| EClass c ->
-								(EClass { c with d_name = c.d_name ^ "_Statics" }, pos) :: inner
-							| _ -> assert false
-						with | Not_found ->
-							inner
-						in
-						let ret = Some ( real_path, (pack, (convert_java_class ctx pos cls, pos) :: inner) ) in
-						ctx.jtparams <- old_types;
-						ret
+						if is_disallowed_inner then
+							None
+						else begin
+							if com.verbose then print_endline ("Parsed Java class " ^ (path_s cls.cpath));
+							let old_types = ctx.jtparams in
+							ctx.jtparams <- cls.ctypes :: ctx.jtparams;
+
+							let pos = { pfile = pos_path; pmin = 0; pmax = 0; } in
+
+							let pack = match fst path with | ["haxe";"root"] -> [] | p -> p in
+
+							let ppath = Hashtbl.find hxpack_to_jpack path in
+							let inner = List.fold_left (fun acc (path,out,_,_) ->
+								let path = jpath_to_hx path in
+								(if out <> Some ppath then
+									acc
+								else match build ctx path p types with
+									| Some(_,(_, classes)) ->
+										let base = snd ppath ^ "$" in
+										(List.map (fun (def,p) ->
+											replace_canonical_name p (fst ppath) base (snd ppath ^ ".") def, p) classes) @ acc
+									| _ -> acc);
+							) [] cls.cinner_types in
+
+							(* add _Statics class *)
+							let inner = try
+								if not (List.mem JInterface cls.cflags) then raise Not_found;
+								let smethods = List.filter (fun f -> List.mem JStatic f.jf_flags) cls.cmethods in
+								let sfields = List.filter (fun f -> List.mem JStatic f.jf_flags) cls.cfields in
+								if not (smethods <> [] || sfields <> []) then raise Not_found;
+								let obj = TObject( (["java";"lang"],"Object"), []) in
+								let ncls = convert_java_class ctx pos { cls with cmethods = smethods; cfields = sfields; cflags = []; csuper = obj; cinterfaces = []; cinner_types = []; ctypes = [] } in
+								match ncls with
+								| EClass c :: imports ->
+									(EClass { c with d_name = c.d_name ^ "_Statics" }, pos) :: inner @ List.map (fun i -> i,pos) imports
+								| _ -> assert false
+							with | Not_found ->
+								inner
+							in
+							let inner_alias = ref SS.empty in
+							List.iter (fun x ->
+								match fst x with
+								| EClass c ->
+									inner_alias := SS.add c.d_name !inner_alias;
+								| _ -> ()
+							) inner;
+							let alias_list = ref [] in
+							List.iter (fun x ->
+								match x with
+								| (EClass c, pos) -> begin
+									let parts = String.nsplit c.d_name "_24" in
+									match parts with
+										| _ :: _ ->
+											let alias_name = String.concat "_" parts in
+											if (not (SS.mem alias_name !inner_alias)) && (not (String.exists (snd path) "_24")) then begin
+												let alias_def = ETypedef {
+													d_name = alias_name;
+													d_doc = None;
+													d_params = c.d_params;
+													d_meta = [];
+													d_flags = [];
+													d_data = CTPath {
+														tpackage = pack;
+														tname = snd path;
+														tparams = List.map (fun tp ->
+															TPType (CTPath {
+																tpackage = [];
+																tname = tp.tp_name;
+																tparams = [];
+																tsub = None;
+															})
+														) c.d_params;
+														tsub = Some(c.d_name);
+													};
+												} in
+												inner_alias := SS.add alias_name !inner_alias;
+												alias_list := (alias_def, pos) :: !alias_list;
+											end
+										| _ -> ()
+								end
+								| _ -> ()
+							) inner;
+							let inner = List.concat [!alias_list ; inner] in
+							let classes = List.map (fun t -> t,pos) (convert_java_class ctx pos cls) in
+							let imports, defs = List.partition (function | (EImport(_),_) -> true | _ -> false) (classes @ inner) in
+							let ret = Some ( real_path, (pack, imports @ defs) ) in
+							ctx.jtparams <- old_types;
+							ret
+						end
 			end
 		with
 		| JReader.Error_message msg ->
-			if com.verbose then prerr_endline ("Class reader failed: " ^ msg);
+			prerr_endline ("Class reader failed: " ^ msg);
 			None
 		| e ->
 			if com.verbose then begin

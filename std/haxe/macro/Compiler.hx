@@ -1,5 +1,5 @@
 /*
- * Copyright (C)2005-2012 Haxe Foundation
+ * Copyright (C)2005-2015 Haxe Foundation
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -26,7 +26,20 @@ import haxe.macro.Expr;
 	All these methods can be called for compiler configuration macros.
 **/
 class Compiler {
+	/**
+		A conditional compiler flag can be set command line using
+		`-D key=value`.
 
+		Returns the value of a compiler flag.
+
+		If the compiler flag is defined but no value is set,
+		`Compiler.getDefine` returns `"1"` (e.g. `-D key`).
+
+		If the compiler flag is not defined, `Compiler.getDefine` returns
+		`null`.
+
+		@see http://haxe.org/manual/lf-condition-compilation.html
+	**/
 	macro static public function getDefine( key : String ) {
 		return macro $v{haxe.macro.Context.definedValue(key)};
 	}
@@ -40,23 +53,38 @@ class Compiler {
 		untyped load("allow_package", 1)(v.__s);
 	}
 
+	/**
+		Set a conditional compiler flag.
+	**/
 	public static function define( flag : String, ?value : String ) untyped {
-		var v = flag + (value == null ? "" : "= " + value);
+		var v = flag + (value == null ? "" : "=" + value);
 		load("define", 1)(v.__s);
 	}
 
+	/**
+		Removes a (static) field from a given class by name.
+		An error is thrown when className or field is invalid.
+	**/
 	public static function removeField( className : String, field : String, ?isStatic : Bool ) {
 		if( !path.match(className) ) throw "Invalid "+className;
 		if( !ident.match(field) ) throw "Invalid "+field;
 		untyped load("type_patch",4)(className.__s,field.__s,isStatic == true,null);
 	}
 
+	/**
+		Set the type of a (static) field at a given class by name.
+		An error is thrown when className or field is invalid.
+	**/
 	public static function setFieldType( className : String, field : String, type : String, ?isStatic : Bool ) {
 		if( !path.match(className) ) throw "Invalid "+className;
 		if( !ident.match((field.charAt(0) == "$") ? field.substr(1) : field) ) throw "Invalid "+field;
 		untyped load("type_patch",4)(className.__s,field.__s,isStatic == true,type.__s);
 	}
 
+	/**
+		Add metadata to a (static) field or class by name.
+		An error is thrown when className or field is invalid.
+	**/
 	public static function addMetadata( meta : String, className : String, ?field : String, ?isStatic : Bool ) {
 		if( !path.match(className) ) throw "Invalid "+className;
 		if( field != null && !ident.match(field) ) throw "Invalid "+field;
@@ -83,10 +111,18 @@ class Compiler {
 	}
 
 	/**
-		Adds a native library depending on the platform (eg : -swf-lib for Flash)
+		Adds a native library depending on the platform (e.g. `-swf-lib` for Flash)
 	**/
 	public static function addNativeLib( name : String ) {
 		untyped load("add_native_lib",1)(name.__s);
+	}
+
+	/**
+		Adds an argument to be passed to the native compiler (e.g. `-javac-arg` for Java)
+	 **/
+	public static function addNativeArg( argument : String )
+	{
+		untyped load("add_native_arg",1)(argument.__s);
 	}
 
 	/**
@@ -95,10 +131,14 @@ class Compiler {
 		In order to include single modules, their paths can be listed directly
 		on command line: `haxe ... ModuleName pack.ModuleName`.
 
+		By default `Compiler.include` will search for modules in the directories defined with `-cp`.
+		If you want to specify a different set of paths to search for modules, you can use the optional
+		argument `classPath`.
+
 		@param rec If true, recursively adds all sub-packages.
 		@param ignore Array of module names to ignore for inclusion.
-		@param classPaths Array of additional class paths to check. This can be
-		    used to add packages outside the usual class paths.
+		@param classPaths An alternative array of paths (directory names) to use to search for modules to include.
+		       Note that if you pass this argument, only the specified paths will be used for inclusion.
 	**/
 	public static function include( pack : String, ?rec = true, ?ignore : Array<String>, ?classPaths : Array<String> ) {
 		var skip = if( ignore == null ) {
@@ -143,6 +183,19 @@ class Compiler {
 	}
 
 	/**
+		Exclude a class or a enum without changing it to @:nativeGen.
+	**/
+	static function excludeBaseType( baseType : Type.BaseType ) : Void {
+		if (!baseType.isExtern) {
+			var meta = baseType.meta;
+			if (!meta.has(":nativeGen")) {
+				meta.add(":hxGen", [], baseType.pos);
+			}
+			baseType.exclude();
+		}
+	}
+
+	/**
 		Exclude a given class or a complete package from being generated.
 	**/
 	public static function exclude( pack : String, ?rec = true ) {
@@ -160,7 +213,7 @@ class Compiler {
 				}
 				var p = b.pack.join(".");
 				if( (p == pack || name == pack) || (rec && StringTools.startsWith(p, pack + ".")) )
-					b.exclude();
+					excludeBaseType(b);
 			}
 		});
 	}
@@ -184,8 +237,8 @@ class Compiler {
 		Context.onGenerate(function(types) {
 			for( t in types ) {
 				switch( t ) {
-				case TInst(c, _): if( classes.exists(c.toString()) ) c.get().exclude();
-				case TEnum(e, _): if( classes.exists(e.toString()) ) e.get().exclude();
+				case TInst(c, _): if( classes.exists(c.toString()) ) excludeBaseType(c.get());
+				case TEnum(e, _): if( classes.exists(e.toString()) ) excludeBaseType(e.get());
 				default:
 				}
 			}
@@ -244,8 +297,7 @@ class Compiler {
 	}
 
 	/**
-		Marks types or packages to be kept by DCE and includes them for
-		compilation.
+		Marks types or packages to be kept by DCE.
 
 		This also extends to the sub-types of resolved modules.
 
@@ -253,87 +305,39 @@ class Compiler {
 		including the containing module has to be used
 		(e.g. msignal.Signal.Signal0).
 
+		This operation has no effect if the type has already been loaded, e.g.
+		through `Context.getType`.
+
 		@param path A package, module or sub-type dot path to keep.
 		@param paths An Array of package, module or sub-type dot paths to keep.
 		@param recursive If true, recurses into sub-packages for package paths.
 	**/
-	public static function keep(?path : String, ?paths : Array<String>, ?recursive:Bool = true)
-	{
+	public static function keep(?path : String, ?paths : Array<String>, ?recursive:Bool = true) {
 		if (null == paths)
 			paths = [];
 		if (null != path)
 			paths.push(path);
 		for (path in paths) {
-			var found:Bool = false;
-			var moduleFirstCharacter:String = ((path.indexOf(".") < 0)?path:path.substring(path.lastIndexOf(".")+1)).charAt(0);
-			var startsWithUpperCase:Bool = (moduleFirstCharacter == moduleFirstCharacter.toUpperCase());//needed because FileSystem is not case sensitive
-			var moduleRoot = (path.indexOf(".") < 0)?"":path.substring(0, path.lastIndexOf("."));
-			var moduleRootFirstCharacter:String = ((moduleRoot.indexOf(".") < 0)?moduleRoot:moduleRoot.substring(moduleRoot.lastIndexOf(".")+1)).charAt(0);
-			var rootStartsWithUpperCase:Bool = (moduleRootFirstCharacter == moduleRootFirstCharacter.toUpperCase());//needed because FileSystem is not case sensitive
-			for ( classPath in Context.getClassPath() ) {
-				var moduleRootPath = (moduleRoot == "")?"":(classPath + moduleRoot.split(".").join("/") + ".hx");
-				var fullPath = classPath + path.split(".").join("/");
-				var isValidModule:Bool = startsWithUpperCase && sys.FileSystem.exists(fullPath + ".hx");
-				var isValidSubType:Bool = !isValidModule && moduleRootPath != "" && rootStartsWithUpperCase && sys.FileSystem.exists(moduleRootPath);
-				var isValidDirectory:Bool = !isValidSubType && sys.FileSystem.exists(fullPath) && sys.FileSystem.isDirectory(fullPath);
-				if ( !isValidDirectory && !isValidModule && !isValidSubType)
-					continue;
-				else
-					found = true;
-
-				if(isValidDirectory) {
-					for( file in sys.FileSystem.readDirectory(fullPath) ) {
-						if( StringTools.endsWith(file, ".hx") ) {
-							var module = path + "." + file.substr(0, file.length - 3);
-							keepModule(module);
-						} else if( recursive && sys.FileSystem.isDirectory(fullPath + "/" + file) )
-							keep(path + "." + file, true);
-					}
-				} else if(isValidModule){
-					keepModule(path);
-				} else if(isValidSubType){
-					keepSubType(path);
-				}
-			}
-
-			if (!found)
-				Context.warning("file or directory not found, can't keep: "+path, Context.currentPos());
+			addGlobalMetadata(path, "@:keep", recursive, true, true);
 		}
 	}
 
-	private static function keepSubType( path : String )
-	{
-		var module = path.substring(0, path.lastIndexOf("."));
-		var subType = module.substring(0, module.lastIndexOf(".")) + "." + path.substring(path.lastIndexOf(".") + 1);
-		var types = Context.getModule(module);
-		var found:Bool = false;
-		for (type in types) {
-			switch(type) {
-				case TInst(cls, _):
-					if (cls.toString() == subType) {
-						found = true;
-						cls.get().meta.add(":keep", [], cls.get().pos);
-					}
-				default:
-					//
-			}
-		}
+	/**
+		Adds metadata `meta` to all types (if `toTypes = true`) or fields (if
+		`toFields = true`) whose dot-path matches `pathFilter`.
 
-		if (!found)
-			Context.warning("subtype not found, can't keep: "+path, Context.currentPos());
-	}
+		If `recursive` is true a dot-path is considered matched if it starts
+		with `pathFilter`. This automatically applies to path filters of
+		packages. Otherwise an exact match is required.
 
-	private static function keepModule( path : String )
-	{
-		var types = Context.getModule(path);
-		for (type in types) {
-			switch(type) {
-				case TInst(cls, _):
-					cls.get().meta.add(":keep", [], cls.get().pos);
-				default:
-					//
-			}
-		}
+		If `pathFilter` is the empty String `""` it matches everything (if
+		`recursive = true`) or only top-level types (if `recursive = false`).
+
+		This operation has no effect if the type has already been loaded, e.g.
+		through `Context.getType`.
+	**/
+	public static function addGlobalMetadata(pathFilter:String, meta:String, ?recursive:Bool = true, ?toTypes:Bool = true, ?toFields:Bool = false) {
+		untyped load("add_global_metadata",5)(untyped pathFilter.__s, meta.__s, recursive, toTypes, toFields);
 	}
 
 	/**
@@ -355,22 +359,41 @@ class Compiler {
 
 	#if (js || macro)
 	/**
-		Embed an on-disk javascript file (can be called into an __init__ method)
+		Embed a JavaScript file at compile time (can be called by `--macro` or within an `__init__` method).
 	**/
-	public static macro function includeFile( fileName : Expr ) {
-		var str = switch( fileName.expr ) {
-		case EConst(c):
-			switch( c ) {
-			case CString(str): str;
-			default: null;
-			}
-		default: null;
+	public static #if !macro macro #end function includeFile( file : String, position:IncludePosition = Top ) {
+		return switch ((position:String).toLowerCase()) {
+			case Inline:
+				if (Context.getLocalModule() == "")
+					Context.error("Cannot use inline mode when includeFile is called by `--macro`", Context.currentPos());
+
+				var f = try sys.io.File.getContent(Context.resolvePath(file)) catch( e : Dynamic ) Context.error(Std.string(e), Context.currentPos());
+				var p = Context.currentPos();
+				{ expr : EUntyped( { expr : ECall( { expr : EConst(CIdent("__js__")), pos : p }, [ { expr : EConst(CString(f)), pos : p } ]), pos : p } ), pos : p };
+			case Top | Closure:
+				load("include_file", 2)(untyped file.__s, untyped position.__s);
+				macro {};
+			case _:
+				Context.error("unknown includeFile position: " + position, Context.currentPos());
 		}
-		if( str == null ) Context.error("Should be a constant string", fileName.pos);
-		var f = try sys.io.File.getContent(Context.resolvePath(str)) catch( e : Dynamic ) Context.error(Std.string(e), fileName.pos);
-		var p = Context.currentPos();
-		return { expr : EUntyped( { expr : ECall( { expr : EConst(CIdent("__js__")), pos : p }, [ { expr : EConst(CString(f)), pos : p } ]), pos : p } ), pos : p };
 	}
 	#end
 
+}
+
+@:enum abstract IncludePosition(String) from String to String {
+	/**
+		Prepend the file content to the output file.
+	*/
+	var Top = "top";
+	/**
+		Prepend the file content to the body of the top-level closure.
+
+		Since the closure is in strict-mode, there may be run-time error if the input is not strict-mode-compatible.
+	*/
+	var Closure = "closure";
+	/**
+		Directly inject the file content at the call site.
+	*/
+	var Inline = "inline";
 }

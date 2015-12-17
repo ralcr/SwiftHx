@@ -1,5 +1,5 @@
 /*
- * Copyright (C)2005-2012 Haxe Foundation
+ * Copyright (C)2005-2015 Haxe Foundation
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -48,7 +48,7 @@ class Log {
 				var pstr = infos == null ? "(null)" : infos.fileName + ":" + infos.lineNumber;
 				var str = flash.Boot.__string_rec(v, "");
 				if( infos != null && infos.customParams != null ) for( v in infos.customParams ) str += "," + flash.Boot.__string_rec(v, "");
-				untyped #if flash9 __global__["trace"] #else __trace__ #end(pstr+": "+str);
+				untyped __global__["trace"](pstr+": "+str);
 			#else
 				untyped flash.Boot.__trace(v,infos);
 			#end
@@ -94,8 +94,8 @@ class Log {
 			#elseif java
 			untyped __java__("java.lang.System.out.println(str)");
 			#end
-		#elseif swift
-			untyped __swift__ ("println(\"\\(infos.fileName):\\(infos.lineNumber): v\")");
+		#elseif objc
+			untyped __objc__ ("println(\"\\(infos.fileName):\\(infos.lineNumber): v\")");
 		#elseif (python)
 			var str:String = null;
 			if (infos != null) {

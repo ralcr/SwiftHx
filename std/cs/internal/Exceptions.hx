@@ -1,5 +1,5 @@
 /*
- * Copyright (C)2005-2012 Haxe Foundation
+ * Copyright (C)2005-2015 Haxe Foundation
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -30,6 +30,7 @@ import cs.system.Exception;
 }
 
 //should NOT be usable inside haxe code
+@:classCode('override public string Message { get { return this.toString(); } }\n\n')
 @:nativeGen @:keep @:native("haxe.lang.HaxeException") private class HaxeException extends Exception
 {
 	private var obj:Dynamic;
@@ -53,7 +54,7 @@ import cs.system.Exception;
 
 	public function toString():String
 	{
-		return "Haxe Exception: " + obj;
+		return Std.string(obj);
 	}
 
 	public static function wrap(obj:Dynamic):Exception

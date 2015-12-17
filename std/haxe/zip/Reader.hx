@@ -1,5 +1,5 @@
 /*
- * Copyright (C)2005-2012 Haxe Foundation
+ * Copyright (C)2005-2015 Haxe Foundation
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -82,7 +82,7 @@ class Reader {
 		var version = i.readUInt16();
 		var flags = i.readUInt16();
 		var utf8 = flags & 0x800 != 0;
-		if( (flags & 0xF7F7) != 0 )
+		if( (flags & 0xF7F1) != 0 )
 			throw "Unsupported flags "+flags;
 		var compression = i.readUInt16();
 		var compressed = (compression != 0);

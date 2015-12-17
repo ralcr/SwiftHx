@@ -23,8 +23,8 @@
  * DAMAGE.
  */
 
-import swift.foundation.NSDate;
-import swift.foundation.NSCalendar;
+import objc.foundation.NSDate;
+import objc.foundation.NSCalendar;
 typedef NSDateComponents = Dynamic;
 
 @:framework("Foundation") @:category("NSDate") @:coreApi class Date {
@@ -36,7 +36,7 @@ typedef NSDateComponents = Dynamic;
 	public function new (year : Int, month : Int, day : Int, hour : Int, min : Int, sec : Int ) :Void {
 		
 		_calendar = NSCalendar.currentCalendar();
-		// This is an Int enum in swift
+		// This is an Int enum in objc
 		_components = _calendar.components (untyped NSYearCalendarUnit | 
 											NSMonthCalendarUnit | 
 											NSDayCalendarUnit | 
@@ -50,7 +50,7 @@ typedef NSDateComponents = Dynamic;
 		_components.setMinute ( min );
 		_components.setSecond ( sec );
 		
-		untyped __swift__("self = [self._calendar dateFromComponents:self._components]");
+		untyped __objc__("self = [self._calendar dateFromComponents:self._components]");
 	}
 
 	public function getTime() : Float {

@@ -1,5 +1,5 @@
 /*
- * Copyright (C)2005-2013 Haxe Foundation
+ * Copyright (C)2005-2015 Haxe Foundation
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -47,30 +47,30 @@ abstract Int32(Int) from Int to Int {
 	}
 
 	@:op(A + B) private static inline function add(a:Int32, b:Int32):Int32
-		return clamp( a + b );
+		return clamp( (a : Int) + (b : Int) );
 
 	@:op(A + B) @:commutative private static inline function addInt(a:Int32, b:Int):Int32
-		return clamp( (a : Int) + b );
+		return clamp( (a : Int) + (b : Int) );
 
 	@:op(A + B) @:commutative private static function addFloat(a:Int32, b:Float):Float;
 
 	@:op(A - B) private static inline function sub(a:Int32, b:Int32):Int32
-		return clamp( a - b );
+		return clamp( (a : Int) - (b : Int) );
 
 	@:op(A - B) private static inline function subInt(a:Int32, b:Int):Int32
-		return clamp( (a : Int) - b );
+		return clamp( (a : Int) - (b : Int) );
 
 	@:op(A - B) private static inline function intSub(a:Int, b:Int32):Int32
-		return clamp( a - (b : Int) );
+		return clamp( (a : Int) - (b : Int) );
 
 	@:op(A - B) private static function subFloat(a:Int32, b:Float):Float;
 
 	@:op(A - B) public static function floatSub(a:Float, b:Int32):Float;
 
-	#if (as3 || flash8 || js || php || python)
+	#if (as3 || js || php || python)
 
 	@:op(A * B) private static function mul(a:Int32, b:Int32):Int32
-		return clamp( a * (b & 0xFFFF) + clamp( a * (b >>> 16) << 16 ) );
+		return clamp( (a : Int) * ((b : Int) & 0xFFFF) + clamp( (a : Int) * ((b : Int) >>> 16) << 16 ) );
 
 	@:op(A * B) @:commutative private static inline function mulInt(a:Int32, b:Int):Int32
 		return mul(a, b);
@@ -152,13 +152,13 @@ abstract Int32(Int) from Int to Int {
 
 	// PHP may be 64-bit, so shifts must be clamped
 	@:op(A << B) private static inline function shl(a:Int32, b:Int32):Int32
-		return clamp( a << b );
+		return clamp( (a : Int) << (b : Int) );
 
 	@:op(A << B) private static inline function shlInt(a:Int32, b:Int):Int32
-		return clamp( a << b );
+		return clamp( (a : Int) << b );
 
-	@:op(A << B) private static inline function intShl(a:Int32, b:Int):Int32
-		return clamp( a << b );
+	@:op(A << B) private static inline function intShl(a:Int, b:Int32):Int32
+		return clamp( a << (b : Int) );
 
 	#else
 
@@ -186,15 +186,21 @@ abstract Int32(Int) from Int to Int {
 
 	static inline function clamp( x : Int ) : Int {
 		// force to-int conversion on platforms that require it
-		#if (as3 || flash8 || js)
+		#if (as3 || js)
 		return x | 0;
 		#elseif php
 		// we might be on 64-bit php, so sign extend from 32-bit
 		return (x << extraBits) >> extraBits;
 		#elseif python
-		return (x + python.Syntax.opPow(2, 31)) % python.Syntax.opPow(2, 32) - python.Syntax.opPow(2, 31);
+		return python.Syntax.pythonCode("{0} % {1}", (x + python.Syntax.opPow(2, 31)), python.Syntax.opPow(2, 32)) - python.Syntax.opPow(2, 31);
 		#else
 		return (x);
 		#end
 	}
+
+	#if js
+	static function __init__() {
+		untyped __feature__("haxe._Int32.Int32_Impl_.mul", if (Math.imul != null) Int32.mul = Math.imul);
+	}
+	#end
 }

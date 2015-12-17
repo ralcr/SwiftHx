@@ -1,5 +1,5 @@
 /*
- * Copyright (C)2005-2013 Haxe Foundation
+ * Copyright (C)2005-2015 Haxe Foundation
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -243,6 +243,13 @@ class ExprTools {
 				}
 				obj;
 			case EArrayDecl(el): el.map(getValue);
+			case EIf(econd, eif, eelse) | ETernary(econd, eif, eelse):
+				if (eelse == null) {
+					throw "If statements only have a value if the else clause is defined";
+				} else {
+					var econd:Dynamic = getValue(econd);
+					econd ? getValue(eif) : getValue(eelse);
+				}
 			case EUnop(op, false, e1):
 				var e1:Dynamic = getValue(e1);
 				switch (op) {

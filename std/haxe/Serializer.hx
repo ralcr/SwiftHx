@@ -1,5 +1,5 @@
 /*
- * Copyright (C)2005-2013 Haxe Foundation
+ * Copyright (C)2005-2015 Haxe Foundation
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -143,6 +143,8 @@ class Serializer {
 		x : exception
 		y : urlencoded string
 		z : zero
+		A : Class<Dynamic>
+		B : Enum<Dynamic>
 		M : haxe.ds.ObjectMap
 		C : custom
 	*/
@@ -186,7 +188,7 @@ class Serializer {
 		return false;
 	}
 
-	#if flash9
+	#if flash
 	// only the instance variables
 
 	function serializeClassFields(v,c) {
@@ -256,10 +258,10 @@ class Serializer {
 			case #if (neko || cs || python) "Array" #else cast Array #end:
 				var ucount = 0;
 				buf.add("a");
-				#if (flash9 || python)
+				#if (flash || python)
 				var v : Array<Dynamic> = v;
 				#end
-				var l = #if (neko || flash9 || php || cs || java || python) v.length #elseif cpp v.__length() #else v[untyped "length"] #end;
+				var l = #if (neko || flash || php || cs || java || python) v.length #elseif cpp v.__length() #else __getField(v, "length") #end;
 				for( i in 0...l ) {
 					if( v[i] == null )
 						ucount++;
@@ -294,7 +296,7 @@ class Serializer {
 			case #if (neko || cs || python) "Date" #else cast Date #end:
 				var d : Date = v;
 				buf.add("v");
-				buf.add(d.toString());
+				buf.add(d.getTime());
 			case #if (neko || cs || python) "haxe.ds.StringMap" #else cast haxe.ds.StringMap #end:
 				buf.add("b");
 				var v : haxe.ds.StringMap<Dynamic> = v;
@@ -316,7 +318,7 @@ class Serializer {
 				buf.add("M");
 				var v : haxe.ds.ObjectMap<Dynamic,Dynamic> = v;
 				for ( k in v.keys() ) {
-					#if (js || flash8 || neko)
+					#if (js || neko)
 					var id = Reflect.field(k, "__id__");
 					Reflect.deleteField(k, "__id__");
 					serialize(k);
@@ -365,7 +367,7 @@ class Serializer {
 				buf.add(chars);
 			default:
 				if( useCache ) cache.pop();
-				if( #if flash9 try v.hxSerialize != null catch( e : Dynamic ) false #elseif (cs || java || python) Reflect.hasField(v, "hxSerialize") #else v.hxSerialize != null #end  ) {
+				if( #if flash try v.hxSerialize != null catch( e : Dynamic ) false #elseif (cs || java || python) Reflect.hasField(v, "hxSerialize") #else v.hxSerialize != null #end  ) {
 					buf.add("C");
 					serializeString(Type.getClassName(c));
 					if( useCache ) cache.push(v);
@@ -375,7 +377,7 @@ class Serializer {
 					buf.add("c");
 					serializeString(Type.getClassName(c));
 					if( useCache ) cache.push(v);
-					#if flash9
+					#if flash
 					serializeClassFields(v,c);
 					#else
 					serializeFields(v);
@@ -383,10 +385,24 @@ class Serializer {
 				}
 			}
 		case TObject:
-			if( useCache && serializeRef(v) )
-				return;
-			buf.add("o");
-			serializeFields(v);
+			if (Std.is(v,Class)) {
+				var className = Type.getClassName(v);
+				#if (flash || cpp)
+				// Currently, Enum and Class are the same for flash and cpp.
+				//  use resolveEnum to test if it is actually an enum
+				if (Type.resolveEnum(className)!=null) buf.add("B") else
+				#end
+				buf.add("A");
+				serializeString(className);
+			} else if (Std.is(v,Enum)) {
+				buf.add("B");
+				serializeString(Type.getEnumName(v));
+			} else {
+				if( useCache && serializeRef(v) )
+					return;
+				buf.add("o");
+				serializeFields(v);
+			}
 		case TEnum(e):
 			if( useCache ) {
 				if( serializeRef(v) )
@@ -410,7 +426,7 @@ class Serializer {
 				for( i in 0...l )
 					serialize(v.args[i]);
 			}
-			#elseif flash9
+			#elseif flash
 			if( useEnumIndex ) {
 				buf.add(":");
 				var i : Int = v.index;
@@ -480,7 +496,7 @@ class Serializer {
 			} else
 				serializeString(v[0]);
 			buf.add(":");
-			var l = v[untyped "length"];
+			var l = __getField(v, "length");
 			buf.add(l - 2);
 			for( i in 2...l )
 				serialize(v[i]);
@@ -500,9 +516,11 @@ class Serializer {
 		}
 	}
 
+	@:extern inline function __getField(o:Dynamic, f:String):Dynamic return untyped o[f];
+
 	public function serializeException( e : Dynamic ) {
 		buf.add("x");
-		#if flash9
+		#if flash
 		if( untyped __is__(e,__global__["Error"]) ) {
 			var e : flash.errors.Error = e;
 			var s = e.getStackTrace();

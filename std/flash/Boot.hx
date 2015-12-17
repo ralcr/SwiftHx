@@ -1,5 +1,5 @@
 /*
- * Copyright (C)2005-2012 Haxe Foundation
+ * Copyright (C)2005-2015 Haxe Foundation
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -51,7 +51,6 @@ class Boot extends flash.display.MovieClip {
 	public static var skip_constructor = false;
 
 	function start() {
-		#if (mt && !doc_gen) mt.flash.Init.check(); #end
 		#if dontWaitStage
 			init();
 		#else
@@ -80,12 +79,19 @@ class Boot extends flash.display.MovieClip {
 		throw "assert";
 	}
 
+	static var IN_E = 0;
 	public static function enum_to_string( e : { tag : String, params : Array<Dynamic> } ) {
 		if( e.params == null )
 			return e.tag;
 		var pstr = [];
-		for( p in e.params )
-			pstr.push(__string_rec(p,""));
+		if( IN_E > 15 ) {
+			pstr.push("...");
+		} else {
+			IN_E++;
+			for( p in e.params )
+				pstr.push(__string_rec(p, ""));
+			IN_E--;
+		}
 		return e.tag+"("+pstr.join(",")+")";
 	}
 
@@ -209,6 +215,21 @@ class Boot extends flash.display.MovieClip {
 		return s;
 	}
 
+	static public function mapDynamic(d:Dynamic, f:Dynamic) {
+		if (Std.is(d, Array)) {
+			return untyped d["mapHX"](f);
+		} else {
+			return untyped d["map"](f);
+		}
+	}
+
+	static public function filterDynamic(d:Dynamic, f:Dynamic) {
+		if (Std.is(d, Array)) {
+			return untyped d["filterHX"](f);
+		} else {
+			return untyped d["filter"](f);
+		}
+	}
 
 	static function __init__() untyped {
 		var aproto = Array.prototype;

@@ -1,5 +1,5 @@
 /*
- * Copyright (C)2005-2013 Haxe Foundation
+ * Copyright (C)2005-2015 Haxe Foundation
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -26,6 +26,10 @@ import haxe.macro.Expr;
 using Lambda;
 using StringTools;
 
+/**
+	This class provides some utility methods to convert elements from the 
+	macro context to a human-readable String representation.
+*/
 class Printer {
 	var tabs:String;
 	var tabString:String;
@@ -115,7 +119,7 @@ class Printer {
 
 	public function printMetadata(meta:MetadataEntry) return
 		'@${meta.name}'
-		+ (meta.params.length > 0 ? '(${printExprs(meta.params,", ")})' : "");
+		+ ((meta.params != null && meta.params.length > 0) ? '(${printExprs(meta.params,", ")})' : "");
 
 	public function printAccess(access:Access) return switch(access) {
 		case AStatic: "static";
@@ -262,7 +266,7 @@ class Printer {
 					}].join("\n")
 					+ "\n}";
 				case TDClass(superClass, interfaces, isInterface):
-					(isInterface ? "interface " : "class ") + t.name + (t.params.length > 0 ? "<" + t.params.map(printTypeParamDecl).join(", ") + ">" : "")
+					(isInterface ? "interface " : "class ") + t.name + (t.params != null && t.params.length > 0 ? "<" + t.params.map(printTypeParamDecl).join(", ") + ">" : "")
 					+ (superClass != null ? " extends " + printTypePath(superClass) : "")
 					+ (interfaces != null ? (isInterface ? [for (tp in interfaces) " extends " + printTypePath(tp)] : [for (tp in interfaces) " implements " + printTypePath(tp)]).join("") : "")
 					+ " {\n"
@@ -270,7 +274,9 @@ class Printer {
 						var fstr = printField(f);
 						tabs + fstr + switch(f.kind) {
 							case FVar(_, _), FProp(_, _, _, _): ";";
-							case FFun(func) if (func.expr == null): ";";
+							case FFun({expr:null}): ";";
+							case FFun({expr:{expr:EBlock(_)}}): "";
+							case FFun(_): ";";
 							case _: "";
 						};
 					}].join("\n")

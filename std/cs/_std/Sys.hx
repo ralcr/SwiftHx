@@ -1,5 +1,5 @@
 /*
- * Copyright (C)2005-2012 Haxe Foundation
+ * Copyright (C)2005-2015 Haxe Foundation
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -22,42 +22,18 @@
 import sys.io.Process;
 import cs.system.Environment;
 import cs.system.threading.Thread;
-/*
- * Copyright (c) 2005-2012, The Haxe Project Contributors
- * All rights reserved.
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions are met:
- *
- *   - Redistributions of source code must retain the above copyright
- *     notice, this list of conditions and the following disclaimer.
- *   - Redistributions in binary form must reproduce the above copyright
- *     notice, this list of conditions and the following disclaimer in the
- *     documentation and/or other materials provided with the distribution.
- *
- * THIS SOFTWARE IS PROVIDED BY THE HAXE PROJECT CONTRIBUTORS "AS IS" AND ANY
- * EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
- * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
- * DISCLAIMED. IN NO EVENT SHALL THE HAXE PROJECT CONTRIBUTORS BE LIABLE FOR
- * ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
- * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
- * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
- * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
- * DAMAGE.
- */
 
 @:coreApi
 class Sys {
 	private static var _env:haxe.ds.StringMap<String>;
 	private static var _args:Array<String>;
 
-	public static function print( v : Dynamic ) : Void
+	public static inline function print( v : Dynamic ) : Void
 	{
 		cs.system.Console.Write(v);
 	}
 
-	public static function println( v : Dynamic ) : Void
+	public static inline function println( v : Dynamic ) : Void
 	{
 		cs.system.Console.WriteLine(v);
 	}
@@ -73,7 +49,7 @@ class Sys {
 		return _args.copy();
 	}
 
-	public static function getEnv( s : String ) : String
+	public static inline function getEnv( s : String ) : String
 	{
 		return Environment.GetEnvironmentVariable(s);
 	}
@@ -85,7 +61,7 @@ class Sys {
 			_env.set(s, v);
 	}
 
-	public static function environment() : haxe.ds.StringMap<String>
+	public static function environment() : Map<String,String>
 	{
 		if (_env == null)
 		{
@@ -100,7 +76,7 @@ class Sys {
 		return _env;
 	}
 
-	public static function sleep( seconds : Float ) : Void
+	public static inline function sleep( seconds : Float ) : Void
 	{
 		Thread.Sleep( Std.int(seconds * 1000) );
 	}
@@ -111,12 +87,12 @@ class Sys {
 		return false;
 	}
 
-	public static function getCwd() : String
+	public static inline function getCwd() : String
 	{
 		return cs.system.io.Directory.GetCurrentDirectory();
 	}
 
-	public static function setCwd( s : String ) : Void
+	public static inline function setCwd( s : String ) : Void
 	{
 		cs.system.io.Directory.SetCurrentDirectory(s);
 	}
@@ -146,17 +122,18 @@ class Sys {
 		return ret;
 	}
 
-	public static function exit( code : Int ) : Void
+	public static inline function exit( code : Int ) : Void
 	{
 		Environment.Exit(code);
 	}
 
+	@:readOnly static var epochTicks = new cs.system.DateTime(1970, 1, 1).Ticks;
 	public static function time() : Float
 	{
-		return Date.now().getTime() / 1000;
+		return cast((cs.system.DateTime.UtcNow.Ticks - epochTicks), Float) / cast(cs.system.TimeSpan.TicksPerSecond, Float);
 	}
 
-	public static function cpuTime() : Float
+	public static inline function cpuTime() : Float
 	{
 		return Environment.TickCount / 1000;
 	}
@@ -175,7 +152,7 @@ class Sys {
 		#end
 	}
 
-	public static function stdin() : haxe.io.Input
+	public static inline function stdin() : haxe.io.Input
 	{
 #if !(Xbox || CF || MF)
 		return new cs.io.NativeInput(cs.system.Console.OpenStandardInput());
@@ -184,7 +161,7 @@ class Sys {
 #end
 	}
 
-	public static function stdout() : haxe.io.Output
+	public static inline function stdout() : haxe.io.Output
 	{
 #if !(Xbox || CF || MF)
 		return new cs.io.NativeOutput(cs.system.Console.OpenStandardOutput());
@@ -193,7 +170,7 @@ class Sys {
 #end
 	}
 
-	public static function stderr() : haxe.io.Output
+	public static inline function stderr() : haxe.io.Output
 	{
 #if !(Xbox || CF || MF)
 		return new cs.io.NativeOutput(cs.system.Console.OpenStandardError());

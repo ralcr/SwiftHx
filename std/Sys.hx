@@ -1,5 +1,5 @@
 /*
- * Copyright (C)2005-2012 Haxe Foundation
+ * Copyright (C)2005-2015 Haxe Foundation
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -31,7 +31,7 @@ extern class Sys {
 	static function print( v : Dynamic ) : Void;
 
 	/**
-		Print any value on the standard output, followed by a newline
+		Print any value on the standard output, followed by a newline.
 	**/
 	static function println( v : Dynamic ) : Void;
 
@@ -53,7 +53,7 @@ extern class Sys {
 	/**
 		Returns the whole environement variables.
 	**/
-	static function environment() : haxe.ds.StringMap<String>;
+	static function environment() : Map<String,String>;
 
 	/**
 		Suspend the current execution for the given time (in seconds).

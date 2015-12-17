@@ -1,5 +1,5 @@
 /*
- * Copyright (C)2005-2013 Haxe Foundation
+ * Copyright (C)2005-2015 Haxe Foundation
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -59,12 +59,13 @@ class Http {
 #if sys
 	public var noShutdown : Bool;
 	public var cnxTimeout : Float;
-	public var responseHeaders : haxe.ds.StringMap<String>;
+	public var responseHeaders : Map<String,String>;
 	var chunk_size : Null<Int>;
 	var chunk_buf : haxe.io.Bytes;
 	var file : { param : String, filename : String, io : haxe.io.Input, size : Int, mimeType : String };
 #elseif js
 	public var async : Bool;
+	public var withCredentials : Bool;
 #end
 	var postData : String;
 	var headers : List<{ header:String, value:String }>;
@@ -92,6 +93,7 @@ class Http {
 
 		#if js
 		async = true;
+		withCredentials = false;
 		#elseif sys
 		cnxTimeout = 10;
 		#end
@@ -136,7 +138,6 @@ class Http {
 		return this;
 	}
 
-	#if !flash8
 	/**
 		Sets the post data of `this` Http request to `data`.
 
@@ -151,13 +152,12 @@ class Http {
 		postData = data;
 		return this;
 	}
-	#end
 
-	#if (js || flash9)
+	#if (js || flash)
 
 	#if js
 	var req:js.html.XMLHttpRequest;
-	#elseif flash9
+	#elseif flash
 	var req:flash.net.URLLoader;
 	#end
 
@@ -170,7 +170,7 @@ class Http {
 		if (req == null) return;
 		#if js
 		req.abort();
-		#elseif flash9
+		#elseif flash
 		req.close();
 		#end
 		req = null;
@@ -199,10 +199,20 @@ class Http {
 	#if js
 		me.responseData = null;
 		var r = req = js.Browser.createXMLHttpRequest();
+		r.withCredentials = withCredentials;
 		var onreadystatechange = function(_) {
 			if( r.readyState != 4 )
 				return;
 			var s = try r.status catch( e : Dynamic ) null;
+			if ( s != null ) {
+				// If the request is local and we have data: assume a success (jQuery approach):
+				var protocol = js.Browser.location.protocol.toLowerCase();
+				var rlocalProtocol = ~/^(?:about|app|app-storage|.+-extension|file|res|widget):$/;
+				var isLocal = rlocalProtocol.match( protocol );
+				if ( isLocal ) {
+					s = r.responseText != null ? 200 : 404;
+				}
+			}
 			if( s == untyped __js__("undefined") )
 				s = null;
 			if( s != null )
@@ -262,7 +272,7 @@ class Http {
 		r.send(uri);
 		if( !async )
 			onreadystatechange(null);
-	#elseif flash9
+	#elseif flash
 		me.responseData = null;
 		var loader = req = new flash.net.URLLoader();
 		loader.addEventListener( "complete", function(e) {
@@ -321,44 +331,6 @@ class Http {
 			me.req = null;
 			onError("Exception: "+Std.string(e));
 		}
-	#elseif flash
-		me.responseData = null;
-		var r = new flash.LoadVars();
-		// on Firefox 1.5, onData is not called if host/port invalid (!)
-		r.onData = function(data) {
-			if( data == null ) {
-				me.onError("Failed to retrieve url");
-				return;
-			}
-			me.responseData = data;
-			me.onData(data);
-		};
-		#if flash8
-		r.onHTTPStatus = function(status) {
-			// on Firefox 1.5, Flash calls onHTTPStatus with 0 (!??)
-			if( status != 0 )
-				me.onStatus(status);
-		};
-		untyped ASSetPropFlags(r,"onHTTPStatus",7);
-		#end
-		untyped ASSetPropFlags(r,"onData",7);
-		for( h in headers )
-			r.addRequestHeader(h.header,h.value);
-		var param = false;
-		for( p in params ) {
-			param = true;
-			Reflect.setField(r,p.param,p.value);
-		}
-		var small_url = url;
-		if( param && !post ) {
-			var k = url.split("?");
-			if( k.length > 1 ) {
-				small_url = k.shift();
-				r.decode(k.join("?"));
-			}
-		}
-		if( !r.sendAndLoad(small_url,r,if( param ) { if( post ) "POST" else "GET"; } else null) )
-			onError("Failed to initialize Connection");
 	#elseif sys
 		var me = this;
 		var output = new haxe.io.BytesOutput();
@@ -371,7 +343,9 @@ class Http {
 			me.responseData = output.getBytes().toString();
 			#end
 			err = true;
-			old(e);
+			// Resetting back onError before calling it allows for a second "retry" request to be sent without onError being wrapped twice
+			onError = old;
+			onError(e);
 		}
 		customRequest(post,output);
 		if( !err )
@@ -399,7 +373,7 @@ class Http {
 
 	public function customRequest( post : Bool, api : haxe.io.Output, ?sock : AbstractSocket, ?method : String  ) {
 		this.responseData = null;
-		var url_regexp = ~/^(https?:\/\/)?([a-zA-Z\.0-9-]+)(:[0-9]+)?(.*)$/;
+		var url_regexp = ~/^(https?:\/\/)?([a-zA-Z\.0-9_-]+)(:[0-9]+)?(.*)$/;
 		if( !url_regexp.match(url) ) {
 			onError("Invalid URL");
 			return;
@@ -412,7 +386,11 @@ class Http {
 				#elseif java
 				sock = new java.net.SslSocket();
 				#elseif hxssl
+				#if neko
 				sock = new neko.tls.Socket();
+				#else
+				sock = new sys.ssl.Socket();
+				#end
 				#else
 				throw "Https is only supported with -lib hxssl";
 				#end

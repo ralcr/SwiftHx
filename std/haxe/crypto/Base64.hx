@@ -1,5 +1,5 @@
 /*
- * Copyright (C)2005-2013 Haxe Foundation
+ * Copyright (C)2005-2015 Haxe Foundation
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -32,8 +32,13 @@ class Base64 {
 	public static function encode( bytes : haxe.io.Bytes, complement = true ) : String {
 		var str = new BaseCode(BYTES).encodeBytes(bytes).toString();
 		if( complement )
-			for( i in 0...(3-(bytes.length*4)%3)%3 )
+			switch (bytes.length % 3) {
+			case 1:
+				str += "==";
+			case 2:
 				str += "=";
+			default:
+			}
 		return str;
 	}
 

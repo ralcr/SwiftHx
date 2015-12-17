@@ -1,5 +1,5 @@
 /*
- * Copyright (C)2005-2012 Haxe Foundation
+ * Copyright (C)2005-2015 Haxe Foundation
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -20,7 +20,7 @@
  * DEALINGS IN THE SOFTWARE.
  */
 /**
-	The Reflect API is a way to manipulate values dynamicly through an
+	The Reflect API is a way to manipulate values dynamically through an
 	abstract interface in an untyped manner. Use with care.
 **/
 extern class Reflect {
@@ -89,7 +89,7 @@ extern class Reflect {
 	/**
 		Call a method with the given object and arguments.
 	**/
-	public static function callMethod( o : Dynamic, func : Dynamic, args : Array<Dynamic> ) : Dynamic;
+	public static function callMethod( o : Dynamic, func : haxe.Constraints.Function, args : Array<Dynamic> ) : Dynamic;
 
 	/**
 		Returns the fields of structure `o`.
@@ -148,8 +148,8 @@ extern class Reflect {
 
 		- class instance
 		- structure
-		- Class<T>
-		- Enum<T>
+		- `Class<T>`
+		- `Enum<T>`
 
 		Otherwise, including if `v` is null, the result is false.
 	**/

@@ -1,5 +1,5 @@
 /*
- * Copyright (C)2005-2012 Haxe Foundation
+ * Copyright (C)2005-2015 Haxe Foundation
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -114,6 +114,17 @@ class Context {
 	}
 
 	/**
+		Returns the call arguments that lead to the invocation of the current
+		`@:genericBuild` macro, if available.
+
+		Returns `null` if the current macro is not a `@:genericBuild` macro.
+	**/
+	@:require(haxe_ver >= 3.2)
+	public static function getCallArguments():Null<Array<Expr>> {
+		return load("call_arguments", 0)();
+	}
+
+	/**
 		Returns the current class in which the macro was called.
 
 		If no such class exists, null is returned.
@@ -167,6 +178,15 @@ class Context {
 	}
 
 	/**
+		Returns an `Array` of all imports in the context the macro was called.
+
+		Modifying the returned array has no effect on the compiler.
+	**/
+	public static function getLocalImports() :  Array<ImportExpr> {
+		return load("local_imports", 0)();
+	}
+
+	/**
 		Returns a map of local variables accessible in the context the macro was
 		called.
 
@@ -176,7 +196,7 @@ class Context {
 		Modifying the returned map has no effect on the compiler.
 	**/
 	@:deprecated("Use Context.getLocalTVars() instead")
-	public static function getLocalVars() : haxe.ds.StringMap<Type> {
+	public static function getLocalVars() : Map<String,Type> {
 		return load("local_vars", 1)(false);
 	}
 
@@ -185,10 +205,10 @@ class Context {
 		of `Type`.
 	**/
 	@:require(haxe_ver >= 3.102)
-	public static function getLocalTVars() : haxe.ds.StringMap<Type.TVar> {
+	public static function getLocalTVars() : Map<String,Type.TVar> {
 		return load("local_vars", 1)(true);
 	}
-	
+
 	/**
 		Tells if compiler directive `s` has been set.
 
@@ -215,12 +235,24 @@ class Context {
 	}
 
 	/**
+		Returns a map of all compiler directives that have been set.
+
+		Compiler directives are set using the `-D` command line parameter, or
+		by calling `haxe.macro.Compiler.define`.
+
+		Modifying the returned map has no effect on the compiler.
+	 */
+	public static function getDefines() : Map<String,String> {
+		return load("get_defines", 0)();
+	}
+
+	/**
 		Resolves a type identified by `name`.
 
 		The resolution follows the usual class path rules where the last
 		declared class path has priority.
 
-		If no type can be found, null is returned.
+		If no type can be found, an exception of type `String` is thrown.
 	**/
 	public static function getType( name : String ) : Type {
 		return load("get_type", 1)(untyped name.__s);
@@ -241,6 +273,9 @@ class Context {
 
 	/**
 		Parses `expr` as haxe code, returning the corresponding AST.
+
+		String interpolation of single quote strings within `expr` is not
+		supported.
 
 		The provided `Position` `pos` is used for all generated inner AST nodes.
 	**/
@@ -315,7 +350,7 @@ class Context {
 	/**
 		Types expression `e` and returns its type.
 
-		Typing the expression may result in an compiler error which can be
+		Typing the expression may result in a compiler error which can be
 		caught using `try ... catch`.
 	**/
 	public static function typeof( e : Expr ) : Type {
@@ -325,7 +360,7 @@ class Context {
 	/**
 		Types expression `e` and returns the corresponding `TypedExpr`.
 
-		Typing the expression may result in an compiler error which can be
+		Typing the expression may result in a compiler error which can be
 		caught using `try ... catch`.
 	**/
 	@:require(haxe_ver >= 3.1)
@@ -343,7 +378,7 @@ class Context {
 	}
 
 	/**
-		Returns true if `t1` and `t2` unify, false otherwise.
+		Tries to unify `t1` and `t2` and returns `true` if successful.
 	**/
 	public static function unify( t1 : Type, t2 : Type) : Bool {
 		return load("unify", 2)(t1, t2);
@@ -356,6 +391,15 @@ class Context {
 	**/
 	public static function follow( t : Type, ?once : Bool ) : Type {
 		return load("follow", 2)(t,once);
+	}
+
+	/**
+		Follows a type, including abstracts' underlying implementation
+
+		See `haxe.macro.TypeTools.followWithAbstracts` for details.
+	**/
+	public static function followWithAbstracts(t : Type, once : Bool = false ) : Type {
+		return load("follow_with_abstracts", 2)(t,once);
 	}
 
 	/**
@@ -380,7 +424,7 @@ class Context {
 		Modifying the returned map has no effect on the compilation, use
 		`haxe.macro.Context.addResource` to add new resources to the compilation unit.
 	**/
-	public static function getResources():haxe.ds.StringMap<haxe.io.Bytes> {
+	public static function getResources():Map<String,haxe.io.Bytes> {
 		var x:haxe.ds.StringMap<neko.NativeString> = load("get_resources",0)();
 		var r = new haxe.ds.StringMap();
 		for (k in x.keys()) {
@@ -395,6 +439,11 @@ class Context {
 		The resource is then available using the `haxe.macro.Resource` API.
 
 		If a previous resource was bound to `name`, it is overwritten.
+		
+		Compilation server : when using the compilation server, the resource is bound
+		to the Haxe module which calls the macro, so it will be included again if
+		that module is reused. If this resource concerns several modules, prefix its
+		name with a $ sign, this will bind it to the macro module instead.
 	**/
 	public static function addResource( name : String, data : haxe.io.Bytes ) {
 		load("add_resource",2)(untyped name.__s,data.getData());
@@ -417,10 +466,17 @@ class Context {
 	}
 
 	/**
-		Defines a new module with several `TypeDefinition` `types`.
+		Defines a new module as `modulePath` with several `TypeDefinition`
+		`types`. This is analogous to defining a .hx file.
+
+		The individial `types` can reference each other and any identifier
+		respects the `imports` and `usings` as usual, expect that imports are
+		not allowed to have `.*` wildcards or `in s` shorthands.
 	**/
-	public static function defineModule( modulePath : String, types : Array<TypeDefinition> ) : Void {
-		load("define_module", 2)(untyped modulePath.__s,untyped types.__neko());
+	public static function defineModule( modulePath : String, types : Array<TypeDefinition>, ?imports: Array<ImportExpr>, ?usings : Array<TypePath> ) : Void {
+		if (imports == null) imports = [];
+		if (usings == null) usings = [];
+		load("define_module", 4)(untyped modulePath.__s, untyped types.__neko(), untyped imports.__neko(), untyped usings.__neko());
 	}
 
 	/**
@@ -430,6 +486,52 @@ class Context {
 	**/
 	public static function getTypedExpr( t : Type.TypedExpr ) : Expr {
 		return load("get_typed_expr",1)(t);
+	}
+
+
+	/**
+		Store typed expression `t` internally and give a syntax-level expression
+		that can be returned from a macro and will be replaced by the stored
+		typed expression.
+
+		If `t` is null or invalid, an exception is thrown.
+
+		NOTE: the returned value references an internally stored typed expression
+		that is reset between compilations, so care should be taken when storing
+		the expression returned by this method in a static variable and using the
+		compilation server.
+	**/
+	@:require(haxe_ver >= 3.2)
+	public static function storeTypedExpr( t : Type.TypedExpr ) : Expr {
+		return load("store_typed_expr",1)(t);
+	}
+
+	/**
+		Evaluates `e` as macro code.
+
+		Any call to this function takes effect when the macro is executed, not
+		during typing. As a consequence, this function can not introduce new
+		local variables into the macro context and may have other restrictions.
+
+		Usage example:
+
+		```haxe
+		var e = macro function(i) return i * 2;
+		var f:Int -> Int = haxe.macro.Context.eval(e);
+		trace(f(2)); // 4
+		```
+
+		Code passed in from outside the macro cannot reference anything in its
+		context, such as local variables. However, it is possible to reference
+		static methods.
+
+		This method should be considered experimental.
+
+		If `e` is null, the result is unspecified.
+	**/
+	@:require(haxe_ver >= 3.3)
+	public static function eval( e : Expr ) : Dynamic {
+		return load("eval",1)(e);
 	}
 
 	/**

@@ -1,5 +1,5 @@
 /*
- * Copyright (C)2005-2012 Haxe Foundation
+ * Copyright (C)2005-2015 Haxe Foundation
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -148,8 +148,9 @@ enum ValueType {
       for(name in names)
       {
          try {
-            var result:T = untyped e.mConstructEnum(name,null);
-            enums.push( result );
+            var result:T = untyped e.ConstructEnum(name,null);
+            if (result!=null)
+               enums.push( result );
          } catch ( invalidArgCount:String) {
          }
       }

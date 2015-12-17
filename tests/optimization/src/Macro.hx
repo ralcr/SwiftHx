@@ -15,8 +15,20 @@ class Macro {
 		if (classes.length == 0) {
 			Context.onAfterGenerate(run);
 		}
-		Context.getType(className);
-		classes.push(className);
+		if (className.charAt(0).toLowerCase() == className.charAt(0)) {
+			var dir = sys.FileSystem.readDirectory("src/" +className.replace(".", "/"));
+			for (file in dir) {
+				if (file.endsWith(".hx")) {
+					var name = className + "." + file.substr(0, -3);
+					Context.getType(name);
+					classes.push(name);
+
+				}
+			}
+		} else {
+			Context.getType(className);
+			classes.push(className);
+		}
 	}
 
 	static function run() {
@@ -35,6 +47,9 @@ class Macro {
 			case TInst(c, _): c.get();
 			case _: Context.error('$className should be a class', Context.currentPos());
 		}
+		#if !js_unflatten
+		className = className.replace(".", "_");
+		#end
 		var fields = [];
 		function checkField(cf:ClassField) {
 			if (cf.meta.has(":js")) {
@@ -50,7 +65,9 @@ class Macro {
 			++tests;
 			if (output != field.js) {
 				++failures;
-				Context.warning('$output should be ${field.js}', field.pos);
+				Context.warning('Test failed', field.pos);
+				Context.warning('Expected: ' + field.js, field.pos);
+				Context.warning('Actual  : ' +output, field.pos);
 			}
 		}
 	}

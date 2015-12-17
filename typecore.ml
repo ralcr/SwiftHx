@@ -1,23 +1,20 @@
 (*
- * Copyright (C)2005-2013 Haxe Foundation
- *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included in
- * all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
- * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+	The Haxe Compiler
+	Copyright (C) 2005-2015  Haxe Foundation
+
+	This program is free software; you can redistribute it and/or
+	modify it under the terms of the GNU General Public License
+	as published by the Free Software Foundation; either version 2
+	of the License, or (at your option) any later version.
+
+	This program is distributed in the hope that it will be useful,
+	but WITHOUT ANY WARRANTY; without even the implied warranty of
+	MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+	GNU General Public License for more details.
+
+	You should have received a copy of the GNU General Public License
+	along with this program; if not, write to the Free Software
+	Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  *)
 
 open Common
@@ -57,6 +54,15 @@ type typer_pass =
 	| PForce				(* usually ensure that lazy have been evaluated *)
 	| PFinal				(* not used, only mark for finalize *)
 
+type typer_module = {
+	curmod : module_def;
+	mutable module_types : module_type list;
+	mutable module_using : tclass list;
+	mutable module_globals : (string, (module_type * string)) PMap.t;
+	mutable wildcard_packages : string list list;
+	mutable module_imports : Ast.import list;
+}
+
 type typer_globals = {
 	types_module : (path, path) Hashtbl.t;
 	modules : (path , module_def) Hashtbl.t;
@@ -68,6 +74,7 @@ type typer_globals = {
 	mutable std : module_def;
 	mutable hook_generate : (unit -> unit) list;
 	type_patches : (path, (string * bool, type_patch) Hashtbl.t * type_patch) Hashtbl.t;
+	mutable global_metadata : (string list * Ast.metadata_entry * (bool * bool * bool)) list;
 	mutable get_build_infos : unit -> (module_type * t list * Ast.class_field list) option;
 	delayed_macros : (unit -> unit) DynArray.t;
 	mutable global_using : tclass list;
@@ -80,14 +87,6 @@ type typer_globals = {
 	do_build_instance : typer -> module_type -> pos -> ((string * t) list * path * (t list -> t));
 }
 
-and typer_module = {
-	curmod : module_def;
-	mutable module_types : module_type list;
-	mutable module_using : tclass list;
-	mutable module_globals : (string, (module_type * string)) PMap.t;
-	mutable wildcard_packages : string list list;
-}
-
 and typer = {
 	(* shared *)
 	com : context;
@@ -96,6 +95,7 @@ and typer = {
 	mutable meta : metadata;
 	mutable this_stack : texpr list;
 	mutable with_type_stack : with_type list;
+	mutable call_argument_stack : Ast.expr list list;
 	(* variable *)
 	mutable pass : typer_pass;
 	(* per-module *)
@@ -121,13 +121,20 @@ and typer = {
 	mutable on_error : typer -> string -> pos -> unit;
 }
 
-type error_msg =
+type call_error =
+	| Not_enough_arguments of (string * bool * t) list
+	| Too_many_arguments
+	| Could_not_unify of error_msg
+	| Cannot_skip_non_nullable of string
+
+and error_msg =
 	| Module_not_found of path
 	| Type_not_found of path * string
 	| Unify of unify_error list
 	| Custom of string
 	| Unknown_ident of string
 	| Stack of error_msg * error_msg
+	| Call_error of call_error
 
 exception Fatal_error of string * Ast.pos
 
@@ -146,7 +153,8 @@ let unify_min_ref : (typer -> texpr list -> t) ref = ref (fun _ _ -> assert fals
 let match_expr_ref : (typer -> Ast.expr -> (Ast.expr list * Ast.expr option * Ast.expr option) list -> Ast.expr option option -> with_type -> Ast.pos -> decision_tree) ref = ref (fun _ _ _ _ _ _ -> assert false)
 let get_pattern_locals_ref : (typer -> Ast.expr -> Type.t -> (string, tvar * pos) PMap.t) ref = ref (fun _ _ _ -> assert false)
 let get_constructor_ref : (typer -> tclass -> t list -> Ast.pos -> (t * tclass_field)) ref = ref (fun _ _ _ _ -> assert false)
-let check_abstract_cast_ref : (typer -> t -> texpr -> Ast.pos -> texpr) ref = ref (fun _ _ _ _ -> assert false)
+let cast_or_unify_ref : (typer -> t -> texpr -> Ast.pos -> texpr) ref = ref (fun _ _ _ _ -> assert false)
+let find_array_access_raise_ref : (typer -> tabstract -> tparams -> texpr -> texpr option -> pos -> (tclass_field * t * t * texpr * texpr option)) ref = ref (fun _ _ _ _ _ _ -> assert false)
 
 (* Source: http://en.wikibooks.org/wiki/Algorithm_implementation/Strings/Levenshtein_distance#OCaml *)
 let levenshtein a b =
@@ -244,7 +252,7 @@ let unify_error_msg ctx = function
 		msg
 
 let rec error_msg = function
-	| Module_not_found m -> "Class not found : " ^ Ast.s_type_path m
+	| Module_not_found m -> "Type not found : " ^ Ast.s_type_path m
 	| Type_not_found (m,t) -> "Module " ^ Ast.s_type_path m ^ " does not define type " ^ t
 	| Unify l ->
 		let ctx = print_context() in
@@ -252,6 +260,15 @@ let rec error_msg = function
 	| Unknown_ident s -> "Unknown identifier : " ^ s
 	| Custom s -> s
 	| Stack (m1,m2) -> error_msg m1 ^ "\n" ^ error_msg m2
+	| Call_error err -> s_call_error err
+
+and s_call_error = function
+	| Not_enough_arguments tl ->
+		let pctx = print_context() in
+		"Not enough arguments, expected " ^ (String.concat ", " (List.map (fun (n,_,t) -> n ^ ":" ^ (short_type pctx t)) tl))
+	| Too_many_arguments -> "Too many arguments"
+	| Could_not_unify err -> error_msg err
+	| Cannot_skip_non_nullable s -> "Cannot skip non-nullable argument " ^ s
 
 let pass_name = function
 	| PBuildModule -> "build-module"
@@ -318,6 +335,9 @@ let gen_local ctx t =
 	in
 	add_local ctx (loop 0) t
 
+let is_gen_local v =
+	String.unsafe_get v.v_name 0 = String.unsafe_get gen_local_prefix 0
+
 let not_opened = ref Closed
 let mk_anon fl = TAnon { a_fields = fl; a_status = not_opened; }
 
@@ -348,6 +368,9 @@ let rec flush_pass ctx p (where:string) =
 		()
 
 let make_pass ctx f = f
+
+let init_class_done ctx =
+	ctx.pass <- PTypeField
 
 let exc_protect ctx f (where:string) =
 	let rec r = ref (fun() ->
@@ -390,6 +413,10 @@ let context_ident ctx =
 
 let debug ctx str =
 	if Common.raw_defined ctx.com "cdebug" then prerr_endline (context_ident ctx ^ !delay_tabs ^ str)
+
+let init_class_done ctx =
+	debug ctx ("init_class_done " ^ Ast.s_type_path ctx.curclass.cl_path);
+	init_class_done ctx
 
 let ctx_pos ctx =
 	let inf = Ast.s_type_path ctx.m.curmod.m_path in

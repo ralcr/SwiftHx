@@ -1,23 +1,20 @@
 (*
- * Copyright (C)2005-2013 Haxe Foundation
- *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included in
- * all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
- * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+	The Haxe Compiler
+	Copyright (C) 2005-2015  Haxe Foundation
+
+	This program is free software; you can redistribute it and/or
+	modify it under the terms of the GNU General Public License
+	as published by the Free Software Foundation; either version 2
+	of the License, or (at your option) any later version.
+
+	This program is distributed in the hope that it will be useful,
+	but WITHOUT ANY WARRANTY; without even the implied warranty of
+	MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+	GNU General Public License for more details.
+
+	You should have received a copy of the GNU General Public License
+	along with this program; if not, write to the Free Software
+	Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  *)
 
 open Ast
@@ -111,10 +108,6 @@ and type_string_suff suffix haxe_type =
 	| TAbstract ({ a_path = [],"Float" },[]) -> "double"
 	| TAbstract ({ a_path = [],"Bool" },[]) -> "bool"
 	| TAbstract ({ a_path = [],"Void" },[]) -> "Void"
-	| TEnum ({ e_path = ([],"Void") },[]) -> "Void"
-	| TEnum ({ e_path = ([],"Bool") },[]) -> "bool"
-	| TInst ({ cl_path = ([],"Float") },[]) -> "double"
-	| TInst ({ cl_path = ([],"Int") },[]) -> "int"
 	| TEnum (enum,params) ->  (join_class_path enum.e_path "::") ^ suffix
 	| TInst (klass,params) ->  (class_string klass suffix params)
 	| TAbstract (abs,params) ->  (join_class_path abs.a_path "::") ^ suffix
@@ -133,7 +126,7 @@ and type_string_suff suffix haxe_type =
 			(match params with
 			| [t] -> "Array<" ^ (type_string (follow t) ) ^ " >"
 			| _ -> assert false)
-		| _ ->  type_string_suff suffix (apply_params type_def.t_types params type_def.t_type)
+		| _ ->  type_string_suff suffix (apply_params type_def.t_params params type_def.t_type)
 		)
 	| TFun (args,haxe_type) -> "Dynamic"
 	| TAnon anon -> "Dynamic"
@@ -208,7 +201,7 @@ let rec is_string_type t =
 	   (match !(a.a_status) with
 	   | Statics ({cl_path = ([], "String")}) -> true
 	   | _ -> false)
-	| TAbstract (a,pl) -> is_string_type (Codegen.Abstract.get_underlying_type a pl)
+	| TAbstract (a,pl) -> is_string_type (Abstract.get_underlying_type a pl)
 	| _ -> false
 
 let is_string_expr e = is_string_type e.etype
@@ -311,8 +304,11 @@ let is_keyword n =
 	| "include_once" | "isset" | "list" | "namespace" | "print" | "require" | "require_once"
 	| "unset" | "use" | "__function__" | "__class__" | "__method__" | "final"
 	| "php_user_filter" | "protected" | "abstract" | "__set" | "__get" | "__call"
-	| "clone" | "instanceof" | "break" | "case" | "class" | "continue" | "default" | "do" | "else" | "extends" | "for" | "function" | "if" | "new" | "return" | "static" | "switch" | "var" | "while" | "interface" | "implements" | "public" | "private" | "try" | "catch" | "throw" -> true
-	| "goto"
+	| "clone" | "instanceof" | "break" | "case" | "class" | "continue" | "default"
+	| "do" | "else" | "extends" | "for" | "function" | "if" | "new" | "return"
+	| "static" | "switch" | "var" | "while" | "interface" | "implements" | "public"
+	| "private" | "try" | "catch" | "throw" | "goto"
+		-> true
 	| _ -> false
 
 let s_ident n =
@@ -336,14 +332,10 @@ let create_directory com ldir =
  	(List.iter (fun p -> atm_path := !atm_path ^ "/" ^ p; if not (Sys.file_exists !atm_path) then (Unix.mkdir !atm_path 0o755);) ldir)
 
 let write_resource dir name data =
-	let i = ref 0 in
-	String.iter (fun c ->
-		if c = '\\' || c = '/' || c = ':' || c = '*' || c = '?' || c = '"' || c = '<' || c = '>' || c = '|' then String.blit "_" 0 name !i 1;
-		incr i
-	) name;
 	let rdir = dir ^ "/res" in
 	if not (Sys.file_exists dir) then Unix.mkdir dir 0o755;
 	if not (Sys.file_exists rdir) then Unix.mkdir rdir 0o755;
+	let name = Codegen.escape_res_name name false in
 	let ch = open_out_bin (rdir ^ "/" ^ name) in
 	output_string ch data;
 	close_out ch
@@ -369,7 +361,7 @@ let init com cwd path def_type =
 	let ch = open_out (String.concat "/" dir ^ "/" ^ (filename path) ^ (if def_type = 0 then ".class" else if def_type = 1 then ".enum"  else if def_type = 2 then ".interface" else ".extern") ^ ".php") in
 	let imports = Hashtbl.create 0 in
 	Hashtbl.add imports (snd path) [fst path];
-	{
+	let ctx = {
 		com = com;
 		stack = stack_init com false;
 		tabs = "";
@@ -398,7 +390,10 @@ let init com cwd path def_type =
 		inline_index = 0;
 		in_block = false;
 		lib_path = match com.php_lib with None -> "lib" | Some s -> s;
-	}
+	} in
+	Codegen.map_source_header com (fun s -> print ctx "// %s\n" s);
+	ctx
+
 let unsupported msg p = error ("This expression cannot be generated to PHP: " ^ msg) p
 
 let newline ctx =
@@ -597,6 +592,8 @@ and gen_call ctx e el =
 	| TLocal { v_name = "__php__" }, [{ eexpr = TConst (TString code) }] ->
 		(*--php-prefix*)
 		spr ctx (prefix_init_replace ctx.com code)
+	| TLocal { v_name = "__php__" }, { eexpr = TConst (TString code); epos = p } :: tl ->
+		Codegen.interpolate_code ctx.com code tl (spr ctx) (gen_expr ctx) p
 	| TLocal { v_name = "__instanceof__" },  [e1;{ eexpr = TConst (TString t) }] ->
 		gen_value ctx e1;
 		print ctx " instanceof %s" t;
@@ -892,25 +889,32 @@ and gen_inline_function ctx f hasthis p =
 	ctx.in_value <- Some "closure";
 
 	let args a = List.map (fun (v,_) -> v.v_name) a in
-	let arguments = ref [] in
 
-	if hasthis then begin arguments := "this" :: !arguments end;
+	let used_locals = ref PMap.empty in
 
-	PMap.iter (fun n _ -> arguments := !arguments @ [n]) old_li;
+	let rec loop e = match e.eexpr with
+		| TLocal v when not (start_with v.v_name "__hx__") && PMap.mem v.v_name old_l ->
+			used_locals := PMap.add v.v_name v.v_name !used_locals
+		| _ ->
+			Type.iter loop e
+	in
+	loop f.tf_expr;
 
 	spr ctx "array(new _hx_lambda(array(";
 
 	let c = ref 0 in
 
-	List.iter (fun a ->
+	let print_arg a =
 		if !c > 0 then spr ctx ", ";
 		incr c;
 		print ctx "&$%s" a;
-	) (remove_internals !arguments);
+	in
+	if hasthis then print_arg "this";
+	PMap.iter (fun _ a -> print_arg a) !used_locals;
 
 	spr ctx "), \"";
 
-	spr ctx (inline_function ctx (args f.tf_args) hasthis (fun_block ctx f p));
+	spr ctx (inline_function ctx (args f.tf_args) hasthis !used_locals (fun_block ctx f p));
 	print ctx "\"), 'execute')";
 
 	ctx.in_value <- old;
@@ -1221,19 +1225,37 @@ and gen_expr ctx e =
 				let tmp = define_local ctx "_t" in
 				print ctx "(is_object($%s = " tmp;
 				gen_field_op ctx e1;
-				print ctx ") && !($%s instanceof Enum) ? $%s%s" tmp tmp s_phop;
+				print ctx ") && ($%s instanceof Enum) ? $%s%s" tmp tmp s_op;
 				gen_field_op ctx e2;
-				print ctx " : $%s%s" tmp s_op;
+				print ctx " : ";
+				if op = Ast.OpNotEq then spr ctx "!";
+				print ctx "_hx_equal($%s, " tmp;
 				gen_field_op ctx e2;
-				spr ctx ")";
+				spr ctx "))";
 			end
+		| Ast.OpGt | Ast.OpGte | Ast.OpLt | Ast.OpLte when is_string_expr e1 ->
+			spr ctx "(strcmp(";
+			gen_field_op ctx e1;
+			spr ctx ", ";
+			gen_field_op ctx e2;
+			spr ctx ")";
+			let op_str = match op with
+				| Ast.OpGt -> ">"
+				| Ast.OpGte -> ">="
+				| Ast.OpLt -> "<"
+				| Ast.OpLte -> "<="
+				| _ -> assert false
+			in
+			print ctx "%s 0)" op_str
 		| _ ->
 			leftside e1;
 			print ctx " %s " (Ast.s_binop op);
 			gen_value_op ctx e2;
 		));
 	| TEnumParameter(e1,_,i) ->
+		spr ctx "_hx_deref(";
 		gen_value ctx e1;
+		spr ctx ")";
 		print ctx "->params[%d]" i;
 	| TField (e1,s) ->
 		gen_tfield ctx e e1 (field_name s)
@@ -1270,7 +1292,7 @@ and gen_expr ctx e =
 	| TContinue ->
 		if ctx.in_loop then spr ctx "continue" else print ctx "continue %d" ctx.nested_loops
 	| TBlock [] ->
-		spr ctx ""
+		spr ctx "{}"
 	| TBlock el ->
 		let old_l = ctx.inv_locals in
 		let b = save_locals ctx in
@@ -1299,9 +1321,7 @@ and gen_expr ctx e =
 			end) in
 		let remaining = ref (List.length el) in
 		let build e =
-			(match e.eexpr with
-			| TBlock [] -> ()
-			| _ -> newline ctx);
+			newline ctx;
 			if (in_block && !remaining = 1) then begin
 				(match e.eexpr with
 				| TIf _
@@ -1309,7 +1329,6 @@ and gen_expr ctx e =
 				| TThrow _
 				| TWhile _
 				| TFor _
-				| TPatMatch _
 				| TTry _
 				| TBreak
 				| TBlock _ ->
@@ -1323,7 +1342,6 @@ and gen_expr ctx e =
 					| TThrow _
 					| TWhile _
 					| TFor _
-					| TPatMatch _
 					| TTry _
 					| TBlock _ -> ()
 					| _ ->
@@ -1454,7 +1472,7 @@ and gen_expr ctx e =
 			);
 		| TField (e1,s) ->
 			spr ctx (Ast.s_unop op);
-			gen_field_access ctx true e1 (field_name s)
+			gen_tfield ctx e e1 (field_name s)
 		| _ ->
 			spr ctx (Ast.s_unop op);
 			gen_value ctx e)
@@ -1590,7 +1608,6 @@ and gen_expr ctx e =
 		bend();
 		newline ctx;
 		spr ctx "}"
-	| TPatMatch dt -> assert false
 	| TSwitch (e,cases,def) ->
 		let old_loop = ctx.in_loop in
 		ctx.in_loop <- false;
@@ -1675,7 +1692,7 @@ and inline_block ctx e =
 
 		ctx.inline_methods <- ctx.inline_methods @ [block]
 
-and inline_function ctx args hasthis e =
+and inline_function ctx args hasthis used_args e =
 		let index = ctx.inline_index in
 		ctx.inline_index <- ctx.inline_index + 1;
 		let block = {
@@ -1684,9 +1701,9 @@ and inline_function ctx args hasthis e =
 			ihasthis = hasthis; (* param this *)
 			iarguments = args;
 			iexpr = e;
-			ilocals = ctx.locals;
+			ilocals = used_args;
 			iin_block = false;
-			iinv_locals = ctx.inv_locals;
+			iinv_locals = used_args;
 		} in
 
 		ctx.inline_methods <- ctx.inline_methods @ [block];
@@ -1781,7 +1798,6 @@ and gen_value ctx e =
 	| TThrow _
 	| TSwitch _
 	| TFor _
-	| TPatMatch _
 	| TIf _
 	| TTry _ ->
 		inline_block ctx e
@@ -1993,7 +2009,7 @@ let generate_inline_method ctx c m =
 let generate_class ctx c =
 	let requires_constructor = ref true in
 	ctx.curclass <- c;
-	ctx.local_types <- List.map snd c.cl_types;
+	ctx.local_types <- List.map snd c.cl_params;
 
 	print ctx "%s %s " (if c.cl_interface then "interface" else "class") (s_path ctx c.cl_path c.cl_extern c.cl_pos);
 	(match c.cl_super with
@@ -2136,7 +2152,7 @@ let generate_main ctx c =
 		newline ctx
 
 let generate_enum ctx e =
-	ctx.local_types <- List.map snd e.e_types;
+	ctx.local_types <- List.map snd e.e_params;
 	let pack = open_block ctx in
 	let ename = s_path ctx e.e_path e.e_extern e.e_pos in
 

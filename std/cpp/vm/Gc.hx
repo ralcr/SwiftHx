@@ -1,5 +1,5 @@
 /*
- * Copyright (C)2005-2012 Haxe Foundation
+ * Copyright (C)2005-2015 Haxe Foundation
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -92,8 +92,23 @@ class Gc
       untyped __global__.__hxcpp_exit_gc_free_zone();
    }
 
+   static public function setMinimumFreeSpace(inBytes:Int) : Void
+   {
+      untyped __global__.__hxcpp_set_minimum_free_space(inBytes);
+   }
+
+   static public function setTargetFreeSpacePercentage(inPercentage:Int) : Void
+   {
+      untyped __global__.__hxcpp_set_target_free_space_percentage(inPercentage);
+   }
+
+   static public function setMinimumWorkingMemory(inBytes:Int) : Void
+   {
+      untyped __global__.__hxcpp_set_minimum_working_memory(inBytes);
+   }
+
    @:unreflective
-   inline static public function setFinalizer<T>(inObject:T, inFinalizer:cpp.Function<T->Void> ) : Void
+   inline static public function setFinalizer<T>(inObject:T, inFinalizer:cpp.Callable<T->Void> ) : Void
    {
       untyped __global__.__hxcpp_set_finalizer(inObject, inFinalizer);
    }

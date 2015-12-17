@@ -1,5 +1,5 @@
 /*
- * Copyright (C)2005-2012 Haxe Foundation
+ * Copyright (C)2005-2015 Haxe Foundation
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -63,6 +63,10 @@ class Lib {
 
 	public static function trace( arg : Dynamic ) {
 		untyped __global__["trace"](arg);
+	}
+	
+	public static function describeType( value : Dynamic ) : flash.xml.XML {
+		return untyped __global__["flash.utils.describeType"](value);
 	}
 
 	public static function attach( name : String ) : flash.display.MovieClip {

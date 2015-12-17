@@ -1,11 +1,5 @@
-import python.internal.AnonObject;
-import python.internal.EnumImpl;
-import python.internal.Internal;
-import python.lib.Builtin;
-import python.Syntax;
-
 /*
- * Copyright (C)2005-2012 Haxe Foundation
+ * Copyright (C)2005-2015 Haxe Foundation
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -25,6 +19,13 @@ import python.Syntax;
  * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
  * DEALINGS IN THE SOFTWARE.
  */
+
+import python.internal.AnonObject;
+import python.internal.EnumImpl;
+import python.internal.Internal;
+import python.internal.UBuiltins;
+import python.Syntax;
+
 enum ValueType {
 	TNull;
 	TInt;
@@ -52,7 +53,7 @@ enum ValueType {
 		if (Internal.hasClass(o)) {
 			return Internal.fieldClass(o);
 		}
-		if (Builtin.hasattr(o, "__class__")) {
+		if (UBuiltins.hasattr(o, "__class__")) {
 			return Syntax.field(o, "__class__");
 		} else {
 			return null;
@@ -80,12 +81,11 @@ enum ValueType {
 			if (c == String) return "String";
 
 			try {
-				var s :String = Syntax.field(c, "__name__");
-			} catch (e:Dynamic) {}
+				return Syntax.field(c, "__name__");
+			} catch (e:Dynamic) {
+				return null;
+			}
 		}
-		var res = null;
-
-		return res;
 	}
 
 	public static function getEnumName( e : Enum<Dynamic> ) : String {
@@ -137,7 +137,6 @@ enum ValueType {
 			default:
 				throw "Too many arguments";
 		}
-		return null;
 	}
 
 	public static function createEmptyInstance<T>( cl : Class<T> ) : T
@@ -160,7 +159,7 @@ enum ValueType {
 
 	public static function createEnum<T>( e : Enum<T>, constr : String, ?params : Array<Dynamic> ) : T
 	{
-		var f = Reflect.field(e,constr);
+		var f:Dynamic = Reflect.field(e,constr);
 		if( f == null ) throw "No such constructor "+constr;
 		if( Reflect.isFunction(f) ) {
 			if( params == null ) throw "Constructor "+constr+" need parameters";
@@ -188,7 +187,7 @@ enum ValueType {
 	}
 
 	public static function getEnumConstructs( e : Enum<Dynamic> ) : Array<String> {
-		if (Builtin.hasattr(e, Internal.constructsVal())) {
+		if (UBuiltins.hasattr(e, Internal.constructsVal())) {
 			var x:Array<String> = Internal.fieldConstructs(e);
 			return x.copy();
 		} else {
@@ -201,25 +200,25 @@ enum ValueType {
 	public static function typeof( v : Dynamic ) : ValueType {
 		if (v == null) {
 			return TNull;
-		} else if (Builtin.isinstance(v, Builtin.bool )) {
+		} else if (UBuiltins.isinstance(v, UBuiltins.bool )) {
 			return TBool;
-		} else if (Builtin.isinstance(v, Builtin.int)) {
+		} else if (UBuiltins.isinstance(v, UBuiltins.int)) {
 			return TInt;
-		} else if (Builtin.isinstance(v, Builtin.float)) {
+		} else if (UBuiltins.isinstance(v, UBuiltins.float)) {
 			return TFloat;
-		} else if (Builtin.isinstance(v, String)) {
+		} else if (UBuiltins.isinstance(v, String)) {
 			return TClass(String);
-		} else if (Builtin.isinstance(v, Array)) {
+		} else if (UBuiltins.isinstance(v, Array)) {
 			return TClass(Array);
-		} else if (Builtin.isinstance(v, AnonObject) || python.lib.Inspect.isclass(v)) {
+		} else if (UBuiltins.isinstance(v, AnonObject) || python.lib.Inspect.isclass(v)) {
 			return TObject;
 		}
-		else if (Builtin.isinstance(v, Enum)) {
+		else if (UBuiltins.isinstance(v, Enum)) {
 			return TEnum(Syntax.field(v, "__class__"));
 		}
-		else if (Builtin.isinstance(v, Builtin.type) || Internal.hasClass(v)) {
+		else if (UBuiltins.isinstance(v, UBuiltins.type) || Internal.hasClass(v)) {
 			return TClass(Syntax.field(v, "__class__"));
-		} else if (Builtin.callable(v)) {
+		} else if (UBuiltins.callable(v)) {
 			return TFunction;
 		} else {
 			return TUnknown;

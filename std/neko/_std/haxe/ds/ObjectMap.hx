@@ -1,5 +1,5 @@
 /*
- * Copyright (C)2005-2013 Haxe Foundation
+ * Copyright (C)2005-2015 Haxe Foundation
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of h software and associated documentation files (the "Software"),
@@ -22,7 +22,7 @@
 package haxe.ds;
 
 @:coreApi
-class ObjectMap<K:{},V> implements Map.IMap<K,V> {
+class ObjectMap<K:{},V> implements haxe.Constraints.IMap<K,V> {
 
 	static var count = 0;
 

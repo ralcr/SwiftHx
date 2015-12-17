@@ -1,5 +1,5 @@
 /*
- * Copyright (C)2005-2012 Haxe Foundation
+ * Copyright (C)2005-2015 Haxe Foundation
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -69,6 +69,7 @@ typedef ClassField = {
 	var meta : MetaData;
 	var line : Null<Int>;
 	var overloads : Null<List<ClassField>>;
+	var expr : Null<String>;
 }
 
 typedef TypeInfos = {
@@ -107,7 +108,7 @@ typedef Enumdef = {> TypeInfos,
 
 typedef Typedef = {> TypeInfos,
 	var type : CType;
-	var types : haxe.ds.StringMap<CType>; // by platform
+	var types : Map<String,CType>; // by platform
 }
 
 typedef Abstractdef = {> TypeInfos,
@@ -296,7 +297,7 @@ class CTypeTools {
 	}
 
 	static function functionArgumentName(arg:FunctionArgument) {
-		(arg.opt ? "?" : "") + arg.name + ":" + toString(arg.t) + (arg.value == null ? "" : " = " +arg.value);
+		return (arg.opt ? "?" : "") + arg.name + ":" + toString(arg.t) + (arg.value == null ? "" : " = " +arg.value);
 	}
 
 	static function classField(cf:ClassField) {

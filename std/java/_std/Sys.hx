@@ -1,5 +1,5 @@
 /*
- * Copyright (C)2005-2012 Haxe Foundation
+ * Copyright (C)2005-2015 Haxe Foundation
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -22,6 +22,7 @@
 
 import java.lang.System;
 import sys.io.Process;
+using haxe.Int64;
 
 @:coreApi class Sys {
 	private static var _args:java.NativeArray<String>;
@@ -56,7 +57,7 @@ import sys.io.Process;
 		throw "Not implemented in this platform";
 	}
 
-	public static function environment() : haxe.ds.StringMap<String>
+	public static function environment() : Map<String,String>
 	{
 		if (_env != null)
 			return _env;
@@ -125,7 +126,7 @@ import sys.io.Process;
 
 	public static function time() : Float
 	{
-		return cast(System.currentTimeMillis(), Float) / 1000;
+		return cast(System.currentTimeMillis().div(Int64.ofInt(1000)), Float);
 	}
 
 	public static function cpuTime() : Float

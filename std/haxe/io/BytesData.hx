@@ -1,5 +1,5 @@
 /*
- * Copyright (C)2005-2012 Haxe Foundation
+ * Copyright (C)2005-2015 Haxe Foundation
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -23,10 +23,10 @@ package haxe.io;
 
 #if neko
 	typedef BytesData =	neko.NativeString;
-#elseif flash9
+#elseif flash
 	typedef BytesData =	flash.utils.ByteArray;
 #elseif php
-	typedef BytesData =	php.NativeString;
+	typedef BytesData = php.BytesData;
 #elseif cpp
 	extern class Unsigned_char__ { }
 	typedef BytesData = Array<Unsigned_char__>;
@@ -35,7 +35,9 @@ package haxe.io;
 #elseif cs
 	typedef BytesData = cs.NativeArray<cs.StdTypes.UInt8>;
 #elseif python
-	typedef BytesData = python.lib.ByteArray;
+	typedef BytesData = python.Bytearray;
+#elseif js
+	typedef BytesData = js.html.ArrayBuffer;
 #else
 	typedef BytesData = Array<Int>;
 #end

@@ -1,5 +1,5 @@
 /*
- * Copyright (C)2005-2013 Haxe Foundation
+ * Copyright (C)2005-2015 Haxe Foundation
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -23,7 +23,7 @@
  /**
 	IntIterator is used for implementing interval iterations.
 
-	It is usually not used explicitly, but through it's special syntax:
+	It is usually not used explicitly, but through its special syntax:
 	`min...max`
 
 	While it is possible to assign an instance of IntIterator to a variable or

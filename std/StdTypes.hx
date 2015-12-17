@@ -1,5 +1,5 @@
 /*
- * Copyright (C)2005-2013 Haxe Foundation
+ * Copyright (C)2005-2015 Haxe Foundation
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -48,7 +48,7 @@
 
 /**
 	`Null` can be useful in two cases. In order to document some methods
-	that accepts or can return a `null` value, or for the Flash9 compiler and AS3
+	that accepts or can return a `null` value, or for the Flash compiler and AS3
 	generator to distinguish between base values that can be null and others that
 	can't.
 **/
@@ -94,8 +94,11 @@ typedef Iterator<T> = {
 	/**
 		Returns the current item of the Iterator and advances to the next one.
 
-		This method is not required to check hasNext() first. A call to this
-		method while hasNext() is false yields unspecified behavior.
+		This method is not required to check `hasNext` first. A call to this
+		method while `hasNext` is false yields unspecified behavior.
+
+		On the other hand iterators should not require a call to `hasNext`
+		before the first call to `next` if an element is available.
 	**/
 	function next() : T;
 
@@ -111,6 +114,10 @@ typedef Iterable<T> = {
 
 /**
 	ArrayAccess is used to indicate a class that can be accessed using brackets.
-	The type parameter represent the type of the elements stored.
+	The type parameter represents the type of the elements stored.
+
+	This interface should be used for externs only. Haxe does not support custom
+	array access on classes. However, array access can be implemented for
+	abstract types (see http://haxe.org/manual/types-abstract-array-access.html).
 **/
 extern interface ArrayAccess<T> { }

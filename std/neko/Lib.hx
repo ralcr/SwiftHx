@@ -1,5 +1,5 @@
 /*
- * Copyright (C)2005-2012 Haxe Foundation
+ * Copyright (C)2005-2015 Haxe Foundation
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -122,7 +122,7 @@ class Lib {
 	}
 
 	/**
-		Converts a Neko value to its Haxe equivalent. Used to unwrap String and Arrays Objects into raw Neko values.
+		Converts a Haxe value to its Neko equivalent. Used to unwrap String and Arrays Objects into raw Neko values.
 	**/
 	public static function haxeToNeko( v : Dynamic ) : Dynamic untyped {
 		switch( __dollar__typeof(v) ) {

@@ -1,5 +1,5 @@
 /*
- * Copyright (C)2005-2012 Haxe Foundation
+ * Copyright (C)2005-2015 Haxe Foundation
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -21,17 +21,20 @@
  */
 package haxe.crypto;
 
-#if swift
+#if objc
 @:include("CommonCrypto/CommonDigest.h")
 @:include("CommonCrypto/CommonCryptor.h")
 #end
+/**
+    Creates a Sha1 of a String.
+*/
 class Sha1 {
 
 	public static function encode( s:String ) : String {
 		#if php
 		return untyped __call__("sha1", s);
-		#elseif swift
-			untyped __swift__("const char *cstr = [input cStringUsingEncoding:NSUTF8StringEncoding];
+		#elseif objc
+			untyped __objc__("const char *cstr = [input cStringUsingEncoding:NSUTF8StringEncoding];
 	NSData *data = [NSData dataWithBytes:cstr length:input.length];
 	uint8_t digest[CC_SHA1_DIGEST_LENGTH];
 	CC_SHA1(data.bytes, data.length, digest);
@@ -47,7 +50,7 @@ class Sha1 {
 
 	public static function make( b : haxe.io.Bytes ) : haxe.io.Bytes {
 		#if php
-		return haxe.io.Bytes.ofData(untyped __call__("sha1", b.getData(), true));
+		return haxe.io.Bytes.ofData(haxe.io.BytesData.ofString(untyped __call__("sha1", b.getData().toString(), true)));
 		#else
 		var h = new Sha1().doEncode(bytes2blks(b));
 		var out = haxe.io.Bytes.alloc(20);
@@ -179,15 +182,10 @@ class Sha1 {
 
 	function hex( a : Array<Int> ){
 		var str = "";
-		var hex_chr = "0123456789abcdef";
 		for( num in a ) {
-			var j = 7;
-			while( j >= 0 ) {
-				str += hex_chr.charAt( (num >>> (j<<2)) & 0xF );
-				j--;
-			}
+			str += StringTools.hex(num, 8);
 		}
-		return str;
+		return str.toLowerCase();
 	}
 
 	#end

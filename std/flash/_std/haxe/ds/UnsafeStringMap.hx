@@ -1,5 +1,5 @@
 /*
- * Copyright (C)2005-2012 Haxe Foundation
+ * Copyright (C)2005-2015 Haxe Foundation
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -26,7 +26,7 @@ package haxe.ds;
 	As a result, it will be faster to access the map for reading, but it might fail
 	with some reserved keys such as `constructor` or `prototype`.
 **/
-class UnsafeStringMap<T> implements Map.IMap<String,T> {
+class UnsafeStringMap<T> implements haxe.Constraints.IMap<String,T> {
 
 	private var h : flash.utils.Dictionary;
 

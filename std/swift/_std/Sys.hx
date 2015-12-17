@@ -26,7 +26,7 @@
 @:coreApi class Sys {
 
 	public static function print( v : Dynamic ) : Void {
-		untyped __swift__("print(v)");
+		untyped __objc__("print(v)");
 	}
 
 	public static function println( v : Dynamic ) : Void {
@@ -109,7 +109,7 @@
 	}
 
 	public static function exit( code : Int ) : Void {
-		untyped __swift__("exit(code)");
+		untyped __objc__("exit(code)");
 	}
 
 	public static function time() : Float {

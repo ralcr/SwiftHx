@@ -1,5 +1,5 @@
 /*
- * Copyright (C)2005-2012 Haxe Foundation
+ * Copyright (C)2005-2015 Haxe Foundation
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -24,7 +24,7 @@ package haxe.crypto;
 /**
 	Creates a MD5 of a String.
 **/
-#if swift
+#if objc
 @:include("CommonCrypto/CommonDigest.h")
 @:include("CommonCrypto/CommonCryptor.h")
 #end
@@ -35,8 +35,8 @@ class Md5 {
 			return untyped new String(base_encode(make_md5(s.__s),"0123456789abcdef".__s));
 		#elseif php
 			return untyped __call__("md5", s);
-		#elseif swift
-			untyped __swift__("const char *cStr = [input UTF8String];
+		#elseif objc
+			untyped __objc__("const char *cStr = [input UTF8String];
 	unsigned char digest[16];
 	CC_MD5( cStr, strlen(cStr), digest ); // This is the md5 call
 	NSMutableString *output = [NSMutableString stringWithCapacity:CC_MD5_DIGEST_LENGTH * 2];
@@ -53,7 +53,7 @@ class Md5 {
 		#if neko
 			return haxe.io.Bytes.ofData(make_md5(b.getData()));
 		#elseif php
-			return haxe.io.Bytes.ofData(untyped __call__("md5", b.getData(), true));
+			return haxe.io.Bytes.ofData( haxe.io.BytesData.ofString(untyped __call__("md5", b.getData().toString(), true)));
 		#else
 			var h = new Md5().doEncode(bytes2blks(b));
 			var out = haxe.io.Bytes.alloc(16);

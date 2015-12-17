@@ -1,5 +1,5 @@
 /*
- * Copyright (C)2005-2013 Haxe Foundation
+ * Copyright (C)2005-2015 Haxe Foundation
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -20,15 +20,79 @@
  * DEALINGS IN THE SOFTWARE.
  */
 
-#if ((flash9 || flash9doc || cs) && !doc_gen)
+#if ((flash || flash9doc || cs) && !doc_gen)
 /**
-	The unsigned Int type is only defined for Flash9 and C#. It's currently
+	The unsigned Int type is only defined for Flash and C#. It's currently
 	handled the same as a normal Int.
 **/
-@:coreType @:notNull @:runtimeValue abstract UInt to Int from Int { }
+@:coreType
+@:notNull
+@:runtimeValue
+@:analyzer(no_const_propagation)
+abstract UInt to Int from Int
+{
+	@:commutative @:op(A+B) private static function addI(lhs:UInt, rhs:Int):UInt;
+	@:commutative @:op(A+B) private static function addF(lhs:UInt, rhs:Float):Float;
+	@:op(A+B) private static function add(lhs:UInt, rhs:UInt):UInt;
+
+	@:commutative @:op(A*B) private static function mulI(lhs:UInt, rhs:Int):UInt;
+	@:commutative @:op(A*B) private static function mulF(lhs:UInt, rhs:Float):Float;
+	@:op(A*B) private static function mul(lhs:UInt, rhs:UInt):UInt;
+
+	@:op(A%B) private static function modI(lhs:UInt, rhs:Int):UInt;
+	@:op(A%B) private static function modF(lhs:UInt, rhs:Float):Float;
+	@:op(A%B) private static function mod(lhs:UInt, rhs:UInt):UInt;
+
+	@:op(A-B) private static function subI(lhs:UInt, rhs:Int):UInt;
+	@:op(A-B) private static function subF(lhs:UInt, rhs:Float):Float;
+	@:op(A-B) private static function sub(lhs:UInt, rhs:UInt):UInt;
+
+	@:op(A/B) private static function divI(lhs:UInt, rhs:Int):Float;
+	@:op(A/B) private static function divF(lhs:UInt, rhs:Float):Float;
+	@:op(A/B) private static function div(lhs:UInt, rhs:UInt):Float;
+
+	@:commutative @:op(A|B) private static function orI(lhs:UInt, rhs:Int):UInt;
+	@:op(A|B) private static function or(lhs:UInt, rhs:UInt):UInt;
+
+	@:commutative @:op(A^B) private static function xorI(lhs:UInt, rhs:Int):UInt;
+	@:op(A^B) private static function xor(lhs:UInt, rhs:UInt):UInt;
+
+	@:commutative @:op(A&B) private static function andI(lhs:UInt, rhs:Int):UInt;
+	@:op(A&B) private static function and(lhs:UInt, rhs:UInt):UInt;
+
+	@:op(A<<B) private static function shl(lhs:UInt, rhs:Int):UInt;
+	@:op(A>>B) private static inline function shr(lhs:UInt, rhs:Int):UInt return lhs >>> rhs;
+	@:op(A>>>B) private static function ushr(lhs:UInt, rhs:Int):UInt;
+
+	@:op(A>B) private static function gt(lhs:UInt, rhs:UInt):Bool;
+	@:op(A>=B) private static function gte(lhs:UInt, rhs:UInt):Bool;
+	@:op(A<B) private static function lt(lhs:UInt, rhs:UInt):Bool;
+	@:op(A<=B) private static function lte(lhs:UInt, rhs:UInt):Bool;
+
+	@:op(A>B) private static function gtf(lhs:UInt, rhs:Float):Bool;
+	@:op(A>B) private static function gtf2(lhs:Float, rhs:UInt):Bool;
+	@:op(A>=B) private static function gtef(lhs:UInt, rhs:Float):Bool;
+	@:op(A>=B) private static function gtef2(lhs:Float, rhs:UInt):Bool;
+	@:op(A<B) private static function ltf(lhs:UInt, rhs:Float):Bool;
+	@:op(A<B) private static function ltf2(lhs:Float, rhs:UInt):Bool;
+	@:op(A<=B) private static function ltef(lhs:UInt, rhs:Float):Bool;
+	@:op(A<=B) private static function ltef2(lhs:Float, rhs:UInt):Bool;
+
+	@:op(~A) private static function bneg(t:UInt):UInt;
+
+	@:commutative @:op(A == B) private static function equalsInt<T:Int>(a:UInt, b:T):Bool;
+	@:commutative @:op(A != B) private static function notEqualsInt<T:Int>(a:UInt, b:T):Bool;
+	@:commutative @:op(A == B) private static function equalsFloat<T:Float>(a:UInt, b:T):Bool;
+	@:commutative @:op(A != B) private static function notEqualsFloat<T:Float>(a:UInt, b:T):Bool;
+
+	@:op(++A) private function prefixIncrement():UInt;
+	@:op(A++) private function postfixIncrement():UInt;
+	@:op(--A) private function prefixDecrement():UInt;
+	@:op(A--) private function postfixDecrement():UInt;
+}
 #else
 /**
-	The unsigned Int type is only defined for Flash9 and C#.
+	The unsigned Int type is only defined for Flash and C#.
 	Simulate it for other platforms.
 **/
 abstract UInt(Int) from Int to Int {
@@ -49,7 +113,7 @@ abstract UInt(Int) from Int to Int {
 		return a.toInt() - b.toInt();
 	}
 
-	@:op(A > B) private static inline function gt(a:UInt, b:UInt):Bool {
+	@:op(A > B) private static #if !js inline #end function gt(a:UInt, b:UInt):Bool {
 		var aNeg = a.toInt() < 0;
 		var bNeg = b.toInt() < 0;
 		return
@@ -57,7 +121,7 @@ abstract UInt(Int) from Int to Int {
 			else a.toInt() > b.toInt();
 	}
 
-	@:op(A >= B) private static inline function gte(a:UInt, b:UInt):Bool {
+	@:op(A >= B) private static #if !js inline #end function gte(a:UInt, b:UInt):Bool {
 		var aNeg = a.toInt() < 0;
 		var bNeg = b.toInt() < 0;
 		return
@@ -89,11 +153,11 @@ abstract UInt(Int) from Int to Int {
 		return a.toInt() << b;
 	}
 
-	@:op(A >> B) private static inline function shr(a:UInt, b:UInt):UInt {
-		return a.toInt() >> b;
+	@:op(A >> B) private static inline function shr(a:UInt, b:Int):UInt {
+		return a.toInt() >>> b;
 	}
 
-	@:op(A >>> B) private static inline function ushr(a:UInt, b:UInt):UInt {
+	@:op(A >>> B) private static inline function ushr(a:UInt, b:Int):UInt {
 		return a.toInt() >>> b;
 	}
 
@@ -211,7 +275,7 @@ abstract UInt(Int) from Int to Int {
 		return this;
 	}
 
-	@:to private inline function toFloat():Float {
+	@:to private #if (!js || analyzer) inline #end function toFloat():Float {
 		var int = toInt();
 		if (int < 0) {
 			return 4294967296.0 + int;

@@ -1,5 +1,5 @@
 /*
-* Copyright (C)2005-2012 Haxe Foundation
+* Copyright (C)2005-2015 Haxe Foundation
 *
 * Permission is hereby granted, free of charge, to any person obtaining a
 * copy of this software and associated documentation files (the "Software"),
@@ -24,11 +24,12 @@ package sys.net;
 import haxe.io.Error;
 import haxe.io.Bytes;
 import haxe.io.BytesData;
-import python.lib.Exceptions;
-import python.lib.Tuple;
+import python.Exceptions;
+import python.Tuple;
 import python.lib.net.Socket in PSocket;
-import python.lib.net.Socket.Select in Select;
+import python.lib.net.Socket.SocketModule in PSocketModule;
 import python.lib.net.Address in PAddress;
+import python.lib.Select;
 
 private class SocketInput extends haxe.io.Input {
 
@@ -90,13 +91,13 @@ private class SocketOutput extends haxe.io.Output {
     }
 
     public override function writeBytes( buf : haxe.io.Bytes, pos : Int, len : Int) : Int {
-        return try {
+        try {
             var data    = buf.getData();
-            var payload = python.Syntax.pythonCode("data[pos:pos+len]");
+            var payload = python.Syntax.pythonCode("data[{0}:{0}+{1}]", pos, len);
             var r = __s.send(payload,0);
             return r;
         } catch( e : BlockingIOError ) {
-                throw Blocked;
+            throw Blocked;
         }
     }
 
@@ -133,9 +134,6 @@ private class SocketOutput extends haxe.io.Output {
         Creates a new unconnected socket.
     **/
     public function new() : Void {
-        //var __s = new PSocket();
-        //input = new SocketInput(__s);
-        //output = new SocketOutput(__s);
     }
 
     function __init() : Void  {
@@ -155,14 +153,14 @@ private class SocketOutput extends haxe.io.Output {
         Read the whole data available on the socket.
     **/
     public function read() : String {
-        return "";
+        return input.readAll().toString();
     }
 
     /**
         Write the whole data to the socket output.
     **/
     public function write( content : String ) : Void {
-
+        output.writeString(content);
     }
 
     /**
@@ -185,7 +183,7 @@ private class SocketOutput extends haxe.io.Output {
         Shutdown the socket, either for reading or writing.
     **/
     public function shutdown( read : Bool, write : Bool ) : Void
-        __s.shutdown( (read && write) ? PSocket.SHUT_RDWR : read ?  PSocket.SHUT_RD : PSocket.SHUT_WR  );
+        __s.shutdown( (read && write) ? PSocketModule.SHUT_RDWR : read ?  PSocketModule.SHUT_RD : PSocketModule.SHUT_WR  );
 
     /**
         Bind the socket to the given host/port so it can afterwards listen for connections there.
@@ -200,7 +198,7 @@ private class SocketOutput extends haxe.io.Output {
         Accept a new connected client. This will return a connected socket on which you can read/write some data.
     **/
     public function accept() : Socket {
-        var tp2:Tup2<PSocket,PAddress> = __s.accept();
+        var tp2:Tuple2<PSocket,PAddress> = __s.accept();
         var s = new Socket();
         s.__s = tp2._1;
         s.input = new SocketInput(s.__s);

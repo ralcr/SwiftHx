@@ -23,7 +23,7 @@
  * DAMAGE.
  */
 
-@:include("swift/runtime.h")
+@:include("objc/runtime.h")
 @:coreApi class Reflect {
 
 	public  static function hasField( o : Dynamic, field : String ) : Bool {

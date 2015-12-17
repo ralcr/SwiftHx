@@ -406,7 +406,7 @@ let rec isString ctx e =
 		if b1 = false then begin
 			(* If the expression is not string check the fa also *)
 			(match fa with
-				| FInstance (tc,tcf)
+				| FInstance (tc,tcf,_)
 				| FStatic (tc,tcf) ->
 					let ft = field_type tcf in
 					(match ft with

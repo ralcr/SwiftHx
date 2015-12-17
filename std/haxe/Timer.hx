@@ -1,5 +1,5 @@
 /*
- * Copyright (C)2005-2013 Haxe Foundation
+ * Copyright (C)2005-2015 Haxe Foundation
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -21,9 +21,9 @@
  */
 package haxe;
 
-#if swift
-	import swift.foundation.NSTimer;
-	import swift.foundation.NSRunLoop;
+#if objc
+	import objc.foundation.NSTimer;
+	import objc.foundation.NSRunLoop;
 #end
 
 /**
@@ -41,14 +41,14 @@ package haxe;
 	the child class.
 **/
 class Timer {
-	#if (flash || js || java || python || swift)
+	#if (flash || js || java || python || objc)
 
 	#if (flash || js)
 		private var id : Null<Int>;
 	#elseif java
 		private var timer : java.util.Timer;
 		private var task : java.util.TimerTask;
-	#elseif swift
+	#elseif objc
 		var nstimer :NSTimer;
 	#end
 
@@ -64,16 +64,13 @@ class Timer {
 		The accuracy of this may be platform-dependent.
 	**/
 	public function new( time_ms : Int ){
-		#if flash9
+		#if flash
 			var me = this;
 			id = untyped __global__["flash.utils.setInterval"](function() { me.run(); },time_ms);
-		#elseif flash
-			var me = this;
-			id = untyped _global["setInterval"](function() { me.run(); },time_ms);
 		#elseif js
 			var me = this;
 			id = untyped setInterval(function() me.run(),time_ms);
-		#elseif swift
+		#elseif objc
 			nstimer = NSTimer.timerWithTimeInterval (time_ms*1000, this, new SEL(nsrun), null, true);
 			var runner = NSRunLoop.currentRunLoop();
 			runner.addTimer (nstimer, NSDefaultRunLoopMode);
@@ -95,10 +92,8 @@ class Timer {
 		#if (flash || js)
 			if( id == null )
 				return;
-			#if flash9
+			#if flash
 				untyped __global__["flash.utils.clearInterval"](id);
-			#elseif flash
-				untyped _global["clearInterval"](id);
 			#elseif js
 				untyped clearInterval(id);
 			#end
@@ -107,7 +102,7 @@ class Timer {
 			timer.cancel();
 			timer = null;
 			task = null;
-		#elseif swift
+		#elseif objc
 			nstimer.invalidate();
 			nstimer = null;
 		#end
@@ -127,7 +122,7 @@ class Timer {
 	public dynamic function run() {
 
 	}
-	#if swift
+	#if objc
 	function nsrun(aTimer:NSTimer) {
 		run();
 	}
@@ -188,7 +183,7 @@ class Timer {
 			return untyped __global__.__time_stamp();
 		#elseif sys
 			return Sys.time();
-		#elseif swift
+		#elseif objc
 			return new NSDate().timeIntervalSince1970();
 		#else
 			return 0;
@@ -206,7 +201,7 @@ private class TimerTask extends java.util.TimerTask {
 		this.timer = timer;
 	}
 
-	@:overload public function run():Void {
+	@:overload override public function run():Void {
 		timer.run();
 	}
 }

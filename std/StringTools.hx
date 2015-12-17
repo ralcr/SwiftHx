@@ -1,5 +1,5 @@
 /*
- * Copyright (C)2005-2012 Haxe Foundation
+ * Copyright (C)2005-2015 Haxe Foundation
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -21,26 +21,24 @@
  */
 /**
 	This class provides advanced methods on Strings. It is ideally used with
-	'using StringTools' and then acts as an extension to the String class.
+	`using StringTools` and then acts as an extension to the String class.
 
 	If the first argument to any of the methods is null, the result is
 	unspecified.
 **/
-#if swift
-import swift.foundation.NSCharacterSet;
+#if objc
+import objc.foundation.NSCharacterSet;
 #end
-#if cs
-@:keep
+#if cpp
+using cpp.NativeString;
 #end
 class StringTools {
 	/**
 		Encode an URL by using the standard format.
 	**/
 	#if (!java && !cpp) inline #end public static function urlEncode( s : String ) : String {
-		#if flash9
+		#if flash
 			return untyped __global__["encodeURIComponent"](s);
-		#elseif flash
-			return untyped _global["escape"](s);
 		#elseif neko
 			return untyped new String(_urlEncode(s.__s));
 		#elseif js
@@ -52,11 +50,11 @@ class StringTools {
 				return untyped __java__("java.net.URLEncoder.encode(s, \"UTF-8\")")
 			catch (e:Dynamic) throw e;
 		#elseif cs
-			return untyped cs.system.Uri.EscapeUriString(s);
+			return untyped cs.system.Uri.EscapeDataString(s);
 		#elseif python
-			return python.lib.urllib.Parse.quote(s);
-		#elseif swift
-			return untyped __swift__("[s stringByAddingPercentEscapesUsingEncoding:NSASCIIStringEncoding]");
+			return python.lib.urllib.Parse.quote(s, "");
+		#elseif objc
+			return untyped __objc__("[s stringByAddingPercentEscapesUsingEncoding:NSASCIIStringEncoding]");
 		#else
 			return null;
 		#end
@@ -66,10 +64,8 @@ class StringTools {
 		Decode an URL using the standard format.
 	**/
 	#if (!java && !cpp) inline #end public static function urlDecode( s : String ) : String {
-		#if flash9
+		#if flash
 			return untyped __global__["decodeURIComponent"](s.split("+").join(" "));
-		#elseif flash
-			return untyped _global["unescape"](s);
 		#elseif neko
 			return untyped new String(_urlDecode(s.__s));
 		#elseif js
@@ -84,8 +80,8 @@ class StringTools {
 			return untyped cs.system.Uri.UnescapeDataString(s);
 		#elseif python
 			return python.lib.urllib.Parse.unquote(s);
-		#elseif swift
-			return untyped __swift__("[s stringByReplacingPercentEscapesUsingEncoding:NSUTF8StringEncoding]");
+		#elseif objc
+			return untyped __objc__("[s stringByReplacingPercentEscapesUsingEncoding:NSUTF8StringEncoding]");
 		#else
 			return null;
 		#end
@@ -114,7 +110,7 @@ class StringTools {
 		Unescapes HTML special characters of the string `s`.
 
 		This is the inverse operation to htmlEscape, i.e. the following always
-		holds: htmlUnescape(htmlEscape(s)) == s
+		holds: `htmlUnescape(htmlEscape(s)) == s`
 
 		The replacements follow:
 
@@ -131,17 +127,26 @@ class StringTools {
 	/**
 		Tells if the string `s` starts with the string `start`.
 
-		If `start` is null, the result is unspecified.
+		If `start` is `null`, the result is unspecified.
 
-		If `start` is the empty String "", the result is true.
+		If `start` is the empty String `""`, the result is true.
 	**/
 	public static #if (cs || java) inline #end function startsWith( s : String, start : String ) : Bool {
 		#if java
 		return untyped s.startsWith(start);
 		#elseif cs
 		return untyped s.StartsWith(start);
-		#elseif swift
+		#elseif objc
 		return untyped s.hasPrefix(start);
+		#elseif cpp
+		if (s.length<start.length)
+			return false;
+		var p0 = s.c_str();
+		var p1 = start.c_str();
+		for(i in 0...start.length)
+			if ( p0.at(i) != p1.at(i) )
+				return false;
+		return true;
 		#else
 		return( s.length >= start.length && s.substr(0, start.length) == start );
 		#end
@@ -150,17 +155,26 @@ class StringTools {
 	/**
 		Tells if the string `s` ends with the string `end`.
 
-		If `end` is null, the result is unspecified.
+		If `end` is `null`, the result is unspecified.
 
-		If `end` is the empty String "", the result is true.
+		If `end` is the empty String `""`, the result is true.
 	**/
 	public static #if (cs || java) inline #end function endsWith( s : String, end : String ) : Bool {
 		#if java
 		return untyped s.endsWith(end);
 		#elseif cs
 		return untyped s.EndsWith(end);
-		#elseif swift
+		#elseif objc
 		return untyped s.hasSuffix(end);
+		#elseif cpp
+		if (s.length<end.length)
+			return false;
+		var p0 = s.c_str().add( s.length-end.length );
+		var p1 = end.c_str();
+		for(i in 0...end.length)
+			if ( p0.at(i) != p1.at(i) )
+				return false;
+		return true;
 		#else
 		var elen = end.length;
 		var slen = s.length;
@@ -174,7 +188,7 @@ class StringTools {
 		A character is considered to be a space character if its character code
 		is 9,10,11,12,13 or 32.
 
-		If `s` is the empty String "", or if pos is not a valid position within
+		If `s` is the empty String `""`, or if pos is not a valid position within
 		`s`, the result is false.
 	**/
 	public static function isSpace( s : String, pos : Int ) : Bool {
@@ -188,11 +202,11 @@ class StringTools {
 	/**
 		Removes leading space characters of `s`.
 
-		This function internally calls isSpace() to decide which characters to
+		This function internally calls `isSpace()` to decide which characters to
 		remove.
 
-		If `s` is the empty String "" or consists only of space characters, the
-		result is the empty String "".
+		If `s` is the empty String `""` or consists only of space characters, the
+		result is the empty String `""`.
 	**/
 	public #if cs inline #end static function ltrim( s : String ) : String {
 		#if cs
@@ -213,11 +227,11 @@ class StringTools {
 	/**
 		Removes trailing space characters of `s`.
 
-		This function internally calls isSpace() to decide which characters to
+		This function internally calls `isSpace()` to decide which characters to
 		remove.
 
-		If `s` is the empty String "" or consists only of space characters, the
-		result is the empty String "".
+		If `s` is the empty String `""` or consists only of space characters, the
+		result is the empty String `""`.
 	**/
 	public #if cs inline #end static function rtrim( s : String ) : String {
 		#if cs
@@ -239,14 +253,14 @@ class StringTools {
 	/**
 		Removes leading and trailing space characters of `s`.
 
-		This is a convenience function for ltrim(rtrim(s)).
+		This is a convenience function for `ltrim(rtrim(s))`.
 	**/
 	public #if (cs || java) inline #end static function trim( s : String ) : String {
 		#if cs
 		return untyped s.Trim();
 		#elseif java
 		return untyped s.trim();
-		#elseif swift
+		#elseif objc
 		return untyped s.stringByTrimmingCharactersInSet ( NSCharacterSet.whitespaceCharacterSet());
 		#else
 		return ltrim(rtrim(s));
@@ -256,7 +270,7 @@ class StringTools {
 	/**
 		Concatenates `c` to `s` until `s.length` is at least `l`.
 
-		If `c` is the empty String "" or if `l` does not exceed `s.length`,
+		If `c` is the empty String `""` or if `l` does not exceed `s.length`,
 		`s` is returned unchanged.
 
 		If `c.length` is 1, the resulting String length is exactly `l`.
@@ -278,7 +292,7 @@ class StringTools {
 	/**
 		Appends `c` to `s` until `s.length` is at least `l`.
 
-		If `c` is the empty String "" or if `l` does not exceed `s.length`,
+		If `c` is the empty String `""` or if `l` does not exceed `s.length`,
 		`s` is returned unchanged.
 
 		If `c.length` is 1, the resulting String length is exactly `l`.
@@ -301,8 +315,8 @@ class StringTools {
 		Replace all occurences of the String `sub` in the String `s` by the
 		String `by`.
 
-		If `sub` is the empty String "", `by` is inserted after each character
-		of `s`. If `by` is also the empty String "", `s` remains unchanged.
+		If `sub` is the empty String `""`, `by` is inserted after each character
+		of `s`. If `by` is also the empty String `""`, `s` remains unchanged.
 
 		This is a convenience function for `s.split(sub).join(by)`.
 
@@ -319,8 +333,8 @@ class StringTools {
 			return s.split(sub).join(by);
 		else
 			return untyped s.Replace(sub, by);
-		#elseif swift
-			return untyped __swift__("[s replaceOccurrencesOfString:sub withString:by options:nil range:nil]");
+		#elseif objc
+			return untyped __objc__("[s replaceOccurrencesOfString:sub withString:by options:nil range:nil]");
 		#else
 		return s.split(sub).join(by);
 		#end
@@ -330,10 +344,10 @@ class StringTools {
 		Encodes `n` into a hexadecimal representation.
 
 		If `digits` is specified, the resulting String is padded with "0" until
-		its length equals `digits`.
+		its `length` equals `digits`.
 	**/
 	public static function hex( n : Int, ?digits : Int ) {
-		#if flash9
+		#if flash
 			var n : UInt = n;
 			var s : String = untyped n.toString(16);
 			s = s.toUpperCase();
@@ -364,14 +378,14 @@ class StringTools {
 		Returns the character code at position `index` of String `s`, or an
 		end-of-file indicator at if `position` equals `s.length`.
 
-		This method is faster than String.charCodeAt() on some platforms, but
+		This method is faster than `String.charCodeAt()` on some platforms, but
 		the result is unspecified if `index` is negative or greater than
 		`s.length`.
 
-		End of file status can be checked by calling `StringTools.isEof` with
+		End of file status can be checked by calling `StringTools.isEof()` with
 		the returned value as argument.
 
-		This operation is not guaranteed to work if `s` contains the \0
+		This operation is not guaranteed to work if `s` contains the `\0`
 		character.
 	**/
 	public static inline function fastCodeAt( s : String, index : Int ) : Int {
@@ -379,10 +393,8 @@ class StringTools {
 		return untyped __dollar__sget(s.__s, index);
 		#elseif cpp
 		return untyped s.cca(index);
-		#elseif flash9
-		return untyped s.cca(index);
 		#elseif flash
-		return untyped s["cca"](index);
+		return untyped s.cca(index);
 		#elseif java
 		return ( index < s.length ) ? cast(_charAt(s, index), Int) : -1;
 		#elseif cs
@@ -390,8 +402,8 @@ class StringTools {
 		#elseif js
 		return (untyped s).charCodeAt(index);
 		#elseif python
-		return if (index >= s.length) -1 else python.lib.Builtin.ord(python.Syntax.arrayAccess(s, index));
-		#elseif swift
+		return if (index >= s.length) -1 else python.internal.UBuiltins.ord(python.Syntax.arrayAccess(s, index));
+		#elseif objc
 		return untyped s.characterAtIndex(index);
 		#else
 		return untyped s.cca(index);
@@ -402,10 +414,8 @@ class StringTools {
 		Tells if `c` represents the end-of-file (EOF) character.
 	*/
 	@:noUsing public static inline function isEof( c : Int ) : Bool {
-		#if (flash9 || cpp)
+		#if (flash || cpp)
 		return c == 0;
-		#elseif flash8
-		return c <= 0; // fast NaN
 		#elseif js
 		return c != c; // fast NaN
 		#elseif neko

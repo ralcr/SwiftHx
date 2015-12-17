@@ -1,22 +1,18 @@
-![Haxe logo](http://ralcr.com/swift.png)
-# [Swift target for Haxe language](http://haxe.org)
-
-Haxe is an open source toolkit that allows you to easily build cross-platform tools and applications that target many mainstream platforms. The Haxe toolkit includes:
-
+![Haxe logo](http://ralcr.com/objc.png)
+# [Objc target for Haxe language](http://haxe.org)
 
 ## Building from sources
 
- 1. Clone the repository using git. Be sure to initialize and fetch the submodules.
+ 1. Clone the repository, initialize and fetch the submodules.
 
         git clone git@github.com:ralcr/haxe.git
         cd haxe
         git submodule init
         git submodule update
 
- 2. You now need to hardcode the path to the new std lib. In main.ml file at line 810 change the first path to match yours:
+ 2. You now need to hardcode the path to the new std lib. In main.ml file at around line 810 change the first path to match yours:
 
 		com.class_path <- ["/Users/Cristi/Documents/haxecompiler/haxe/std/";"";"/"]
-
 
  3. Build Haxe with:
 
@@ -35,6 +31,11 @@ Haxe is an open source toolkit that allows you to easily build cross-platform to
 		make clean
 		make
 
+ 7. Bringing HF/haxe changes in this fork (when needed, usually the fork is up to date)
+
+	git fetch upstream
+	git merge upstream/development
+
 ## Getting started with iOS
 
 The starting point of your app should look like this, everything else is ignored:
@@ -51,10 +52,3 @@ Where the AppDelegate.hx conforms with the UIApplicationDelegate. This is the ma
 			return true;
 		}
 	}
-
-
-In case i forget this is how i merge the HF/haxe repository in my local fork
-
-	git fetch upstream
-	git merge upstream/development
-

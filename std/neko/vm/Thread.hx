@@ -1,5 +1,5 @@
 /*
- * Copyright (C)2005-2012 Haxe Foundation
+ * Copyright (C)2005-2015 Haxe Foundation
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -63,7 +63,7 @@ class Thread {
 		return thread_read_message(block);
 	}
 
-	function __compare(t) {
+	@:keep function __compare(t) {
 		return untyped __dollar__compare(handle,t.handle);
 	}
 

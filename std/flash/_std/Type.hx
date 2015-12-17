@@ -1,5 +1,5 @@
 /*
- * Copyright (C)2005-2012 Haxe Foundation
+ * Copyright (C)2005-2015 Haxe Foundation
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -162,7 +162,7 @@ enum ValueType {
 	}
 
 	public static function createEnum<T>( e : Enum<T>, constr : String, ?params : Array<Dynamic> ) : T {
-		var f = untyped e[constr];
+		var f:Dynamic = untyped e[constr];
 		if( f == null ) throw "No such constructor "+constr;
 		if( Reflect.isFunction(f) ) {
 			if( params == null ) throw "Constructor "+constr+" need parameters";
@@ -269,6 +269,7 @@ enum ValueType {
 		return untyped if( e.params == null ) [] else e.params;
 	}
 
+	@:extern
 	public inline static function enumIndex( e : EnumValue ) : Int {
 		return untyped e.index;
 	}

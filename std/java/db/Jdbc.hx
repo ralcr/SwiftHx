@@ -1,4 +1,25 @@
-package java.db;
+/*
+ * Copyright (C)2005-2015 Haxe Foundation
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a
+ * copy of this software and associated documentation files (the "Software"),
+ * to deal in the Software without restriction, including without limitation
+ * the rights to use, copy, modify, merge, publish, distribute, sublicense,
+ * and/or sell copies of the Software, and to permit persons to whom the
+ * Software is furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+ * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+ * DEALINGS IN THE SOFTWARE.
+ */
+ package java.db;
 import java.util.concurrent.atomic.AtomicInteger;
 import haxe.io.Bytes;
 import java.sql.Types;
@@ -55,13 +76,7 @@ private class JdbcConnection implements sys.db.Connection
 	{
 		if (Std.is(v, Date))
 		{
-			if (dbName() == "SQLite")
-			{
-				v = Std.string(v);
-			} else {
-				var d:Date = v;
-				v = new java.sql.Date(cast(d.getTime(), haxe.Int64));
-			}
+			v = Std.string(v);
 		} else if (Std.is(v, Bytes)) {
 			var bt:Bytes = v;
 			v = bt.getData();
@@ -143,7 +158,7 @@ private class JdbcConnection implements sys.db.Connection
 				s = r.matchedRight();
 			}
 			newst.add(s);
-			var stmt = cnx.prepareStatement(newst.toString());
+			var stmt = cnx.prepareStatement(newst.toString(), java.sql.Statement.Statement_Statics.RETURN_GENERATED_KEYS);
 			for (i in 0...sentArray.length)
 			{
 				stmt.setObject(i + 1, sentArray[i]);
@@ -195,6 +210,7 @@ private class JdbcResultSet implements sys.db.ResultSet
 	private var names:Array<String>;
 	private var types:java.NativeArray<Int>;
 	private var dbName:String;
+	private var didNext:Bool;
 
 	public function new(rs, dbName, meta:java.sql.ResultSetMetaData)
 	{
@@ -240,6 +256,7 @@ private class JdbcResultSet implements sys.db.ResultSet
 	{
 		try
 		{
+			didNext = true;
 			return rs != null && rs.next();
 		}
 		catch(e:Dynamic) { return throw e; }
@@ -249,6 +266,15 @@ private class JdbcResultSet implements sys.db.ResultSet
 	{
 		try {
 			if (rs == null) return null;
+			if (didNext)
+			{
+				didNext = false;
+			} else {
+				if (!rs.next())
+				{
+					return null;
+				}
+			}
 			var ret = {}, names = names, types = types;
 			for (i in 0...names.length)
 			{
@@ -290,7 +316,7 @@ private class JdbcResultSet implements sys.db.ResultSet
 
 		try
 		{
-			while(rs.next())
+			while(hasNext())
 				l.add(next());
 		} catch(e:Dynamic) throw e;
 		return l;
@@ -302,7 +328,6 @@ private class JdbcResultSet implements sys.db.ResultSet
     {
   		return rs.getString(n);
     } catch(e:Dynamic) throw e;
-    return null;
 	}
 
 	public function getIntResult( n : Int ) : Int

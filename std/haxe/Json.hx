@@ -1,5 +1,5 @@
 /*
- * Copyright (C)2005-2012 Haxe Foundation
+ * Copyright (C)2005-2015 Haxe Foundation
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -26,11 +26,11 @@ package haxe;
 	Use -D haxeJSON to force usage of the haXe implementation even if a native API is found : this will provide
 	extra encoding features such as enums (replaced by their index), Hashs and Iterable.
 **/
-#if ((swift_version>=5) && !haxeJSON)
-	import swift.foundation.NSError;
-	import swift.foundation.NSString;
-	import swift.foundation.NSData;
-	import swift.foundation.NSJSONSerialization;
+#if ((objc_version>=5) && !haxeJSON)
+	import objc.foundation.NSError;
+	import objc.foundation.NSString;
+	import objc.foundation.NSData;
+	import objc.foundation.NSJSONSerialization;
 #end
 
 class Json {

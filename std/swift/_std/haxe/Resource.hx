@@ -23,7 +23,7 @@
  * DAMAGE.
  */
 package haxe;
-import swift.foundation.NSDictionary;
+import objc.foundation.NSDictionary;
 
 @:coreApi
 class Resource {

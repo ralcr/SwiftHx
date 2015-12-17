@@ -1,5 +1,5 @@
 /*
- * Copyright (C)2005-2012 Haxe Foundation
+ * Copyright (C)2005-2015 Haxe Foundation
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -24,7 +24,7 @@ import haxe.PosInfos;
 
 @:keepSub
 @:publicFields
-class TestCase #if mt_build implements mt.Protect #end {
+class TestCase {
 	public var currentTest : TestStatus;
 
 	public function new( ) {
@@ -42,7 +42,7 @@ class TestCase #if mt_build implements mt.Protect #end {
 
 	function assertTrue( b:Bool, ?c : PosInfos ) : Void {
 		currentTest.done = true;
-		if (b == false){
+		if (b != true){
 			currentTest.success = false;
 			currentTest.error   = "expected true but was false";
 			currentTest.posInfos = c;

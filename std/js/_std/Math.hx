@@ -1,5 +1,5 @@
 /*
- * Copyright (C)2005-2012 Haxe Foundation
+ * Copyright (C)2005-2015 Haxe Foundation
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -23,22 +23,23 @@ package;
 
 // Can't enable @:coreApi because some fields are now inline getters
 // @:coreApi
+@:keepInit
 extern class Math
 {
 	static var PI(default,null) : Float;
 
 	static var NEGATIVE_INFINITY(get, null) : Float;
-	static inline function get_NEGATIVE_INFINITY () : Float {
+	private static inline function get_NEGATIVE_INFINITY () : Float {
 		return -(untyped __js__("Infinity"));
 	}
 
 	static var POSITIVE_INFINITY(get,null) : Float;
-	static inline function get_POSITIVE_INFINITY () : Float {
+	private static inline function get_POSITIVE_INFINITY () : Float {
 		return (untyped __js__("Infinity"));
 	}
 
 	static var NaN(get, null) : Float;
-	static inline function get_NaN () : Float {
+	private static inline function get_NaN () : Float {
 		return (untyped __js__("NaN"));
 	}
 

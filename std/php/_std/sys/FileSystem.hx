@@ -1,5 +1,5 @@
 /*
- * Copyright (C)2005-2012 Haxe Foundation
+ * Copyright (C)2005-2015 Haxe Foundation
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -61,6 +61,11 @@ class FileSystem {
 			return null;
 		else
 			return p;
+	}
+
+	public static function absolutePath ( relPath : String ) : String {
+		if (haxe.io.Path.isAbsolute(relPath)) return relPath;
+		return haxe.io.Path.join([Sys.getCwd(), relPath]);
 	}
 
 	static function kind( path : String ) : FileKind {

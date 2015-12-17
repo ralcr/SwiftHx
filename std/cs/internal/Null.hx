@@ -1,5 +1,5 @@
 /*
- * Copyright (C)2005-2012 Haxe Foundation
+ * Copyright (C)2005-2015 Haxe Foundation
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -43,22 +43,17 @@ package cs.internal;
 @:keep @:struct @:nativeGen @:native("haxe.lang.Null") private class Nullable<T>
 {
 
-	@:readOnly public var value:T;
-	@:readOnly public var hasValue:Bool;
+	@:readOnly public var value(default,never):T;
+	@:readOnly public var hasValue(default,never):Bool;
 
-	@:functionCode('
-			if ( !(v is System.ValueType) && System.Object.ReferenceEquals(v, default(T)))
-			{
-				hasValue = false;
-			}
-
-			this.@value = v;
-			this.hasValue = hasValue;
-	')
 	public function new(v:T, hasValue:Bool)
 	{
-		this.value = v;
-		this.hasValue = hasValue;
+		if (hasValue && cs.system.Object.ReferenceEquals(v, null))
+		{
+			hasValue = false;
+		}
+		untyped this.value = v;
+		untyped this.hasValue = hasValue;
 	}
 
 	@:functionCode('
@@ -78,13 +73,10 @@ package cs.internal;
 		return null;
 	}
 
-	@:functionCode('
-		if (this.hasValue)
-			return value;
-		return null;
-	')
 	public function toDynamic():Dynamic
 	{
+		if (this.hasValue)
+			return value;
 		return null;
 	}
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (C)2005-2012 Haxe Foundation
+ * Copyright (C)2005-2015 Haxe Foundation
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -105,7 +105,7 @@ class Module {
 		Each Module has an export table which can be useful to transfert
 		values between modules.
 	**/
-	public function getExports() : haxe.ds.StringMap<Dynamic> {
+	public function getExports() : Map<String,Dynamic> {
 		var h = new haxe.ds.StringMap();
 		var exp = _module_exports(m);
 		for( f in Reflect.fields(exp) )
@@ -193,6 +193,8 @@ class Module {
 				a.push("FLOAT:"+i.readUntil(0));
 			case 5:
 				a.push("DEBUG");
+			case 6:
+				a.push("VERSION "+i.readByte());
 			default:
 				throw "assert";
 			}
