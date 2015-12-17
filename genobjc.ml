@@ -406,7 +406,7 @@ let rec isString ctx e =
 		if b1 = false then begin
 			(* If the expression is not string check the fa also *)
 			(match fa with
-				| FInstance (tc,tcf,_)
+				| FInstance (tc,_,tcf)
 				| FStatic (tc,tcf) ->
 					let ft = field_type tcf in
 					(match ft with
@@ -631,7 +631,7 @@ let rec typeToString ctx t p =
 		| KNormal | KGeneric | KGenericInstance _ ->
 			ctx.imports_manager#add_class c;
 			remapHaxeTypeToObjc ctx false c.cl_path p
-		| KTypeParameter _ | KExtension _ | KExpr _ | KMacroType | KAbstractImpl _ -> "id")
+		| KTypeParameter _ | KExtension _ | KExpr _ | KMacroType | KAbstractImpl _ | KGenericBuild _ -> "id")
 	| TFun (args, ret) ->
 		let r = ref "" in
 		let index = ref 0 in
@@ -669,7 +669,7 @@ let rec typeToString ctx t p =
 				| TEnum ({ e_path = [],"Bool" },_) -> "BOOL"
 				| _ -> typeToString ctx t p)
 			| _ -> assert false);
-		| _ -> typeToString ctx (apply_params t.t_types args t.t_type) p)
+		| _ -> typeToString ctx (apply_params t.t_params args t.t_type) p)
 	| TLazy f ->
 		typeToString ctx ((!f)()) p
 ;;
@@ -677,7 +677,7 @@ let rec typeToString ctx t p =
 let rec iterSwitchBreak in_switch e =
 	match e.eexpr with
 	| TFunction _ | TWhile _ | TFor _ -> ()
-	| TSwitch _ | TPatMatch _ when not in_switch -> iterSwitchBreak true e
+	| TSwitch _ (*|  TPatMatch _ *) when not in_switch -> iterSwitchBreak true e
 	| TBreak when in_switch -> raise Exit
 	| _ -> iter (iterSwitchBreak in_switch) e
 ;;
@@ -974,7 +974,7 @@ let rec generateCall ctx (func:texpr) arg_list =
 		(* Check if the called function has a custom selector defined *)
 		let sel = (match func.eexpr with
 			(* TODO: TStatic *)
-			| TField (e, FInstance (c, cf)) ->
+			| TField (e, FInstance (c, tp, cf)) ->
 				if Meta.has Meta.Selector cf.cf_meta then (getFirstMetaValue Meta.Selector cf.cf_meta)
 				else ""
 			| _ -> "";
@@ -1306,7 +1306,7 @@ and generateExpression ctx e =
 			ctx.generating_right_side_of_operator <- false;
 		end;
 	(* variable fields on interfaces are generated as (class["field"] as class) *)
-	(* | TField ({etype = TInst({cl_interface = true} as c,_)} as e,FInstance (_,{ cf_name = s })) ->
+	(* | TField ({etype = TInst({cl_interface = true} as c,_)} as e,FInstance (_,_,{ cf_name = s })) ->
 	(* | TClosure ({etype = TInst({cl_interface = true} as c,_)} as e,s) *)
 		(* when (try (match (PMap.find s c.cl_fields).cf_kind with Var _ -> true | _ -> false) with Not_found -> false) -> *)
 		ctx.writer#write "(";
@@ -1322,7 +1322,7 @@ and generateExpression ctx e =
 	| TField (e,fa) ->
 		ctx.generating_fields <- ctx.generating_fields + 1;
 		(match fa with
-		| FInstance (tc,tcf) -> (* ctx.writer#write ("-FInstance-"); *)(* ^(remapKeyword (field_name fa))); *)
+		| FInstance (tc,tp,tcf) -> (* ctx.writer#write ("-FInstance-"); *)(* ^(remapKeyword (field_name fa))); *)
 			(* if ctx.generating_calls = 0 then ctx.generating_property_access <- true; *)
 			generateValue ctx e;
 			let f_prefix = (match tcf.cf_type with
@@ -1891,7 +1891,7 @@ and generateExpression ctx e =
 		ctx.writer#new_line;
 		ctx.writer#end_block;
 		(* ctx.writer#end_block; *)*)
-	| TPatMatch dt -> assert false
+	(* | TPatMatch dt -> assert false *)
 	| TSwitch (e,cases,def) ->
 		(* ctx.return_needs_semicolon <- true; *)
 		ctx.writer#write "switch"; generateValue ctx (parent e); ctx.writer#begin_block;
@@ -2057,7 +2057,7 @@ and generateValue ctx e =
 			match def with None -> None | Some e -> Some (assign e)
 		)) e.etype e.epos);
 		v() *)
-	| TPatMatch dt -> assert false
+	(* | TPatMatch dt -> assert false *)
 	| TTry (b,catchs) ->
 		let v = value true in
 		generateExpression ctx (mk (TTry (block (assign b),

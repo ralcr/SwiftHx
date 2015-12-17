@@ -174,7 +174,7 @@ module Meta = struct
 		| Usage
 		| Used
 		| C
-		| Extension
+		| Category
 		| GetterBody
 		| Import
 		| Framework

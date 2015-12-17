@@ -520,7 +520,7 @@ module MetaInfo = struct
 		| Usage -> ":usage",("?",[])
 		| Used -> ":used",("Internally used by DCE to mark a class or field as used",[Internal])
 		| C -> ":c",("Mark a C method in Objc code",[Platform Objc])
-		| Extension -> ":extension",("Converts a class to an Objc extension(category) of another class",[Platform Objc])
+		| Category -> ":category",("Converts a class to an Objc extension(category) of another class",[Platform Objc])
 		| GetterBody -> ":getterBody",("Set the code inside a getter method",[UsedOn TClassField;Platform Objc])
 		| Import -> ":import",("Generates an #import statement for a native class",[Platform Objc])
 		| Framework -> ":framework",("Generates an #import for the framework instead the class path",[Platform Objc])
