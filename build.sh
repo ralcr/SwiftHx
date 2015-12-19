@@ -14,8 +14,8 @@ cd ../hxcocoa/demos/Hello
 # cd ../PiratePig
 # ./../../../haxe/haxe compile.hxml
 
-# cd ../WWX
-# ./../../../haxe/haxe compile.hxml
+cd ../WWX
+./../../../haxe/haxe compile.hxml
 
 echo " "
 echo "Build the playground..."

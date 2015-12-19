@@ -185,7 +185,7 @@ class sourceWriter write_func close_func =
 		just_finished_block <- false;
 		can_indent <- false
 	
-	method begin_block = this#write ("{"); this#push_indent; this#new_line
+	method begin_block = this#write (" {"); this#push_indent; this#new_line
 	method end_block = this#pop_indent; this#write "}"; just_finished_block <- true
 	method terminate_line = this#write (if just_finished_block then "" else ";"); this#new_line
 	
@@ -522,7 +522,7 @@ let isPointer t =
 	(* TODO: enum is not pointer *)
 ;;
 let addPointerIfNeeded t =
-	if (isPointer t) then "*" else ""
+	if (isPointer t) then " *" else ""
 ;;
 
 (* Generating correct type *)
@@ -805,7 +805,7 @@ let generateFunctionHeader ctx name (meta:metadata) (f:tfunc) params pos is_stat
 		| HeaderObjc | HeaderObjcWithoutParams ->
 			let method_kind = if is_static then "+" else "-" in
 			ctx.writer#write (Printf.sprintf "%s (%s%s)" method_kind return_type (addPointerIfNeeded return_type));
-			ctx.writer#write (Printf.sprintf " %s" (remapKeyword func_name));
+			ctx.writer#write (Printf.sprintf "%s" (remapKeyword func_name));
 			
 		| HeaderBlock ->
 			(* [^BOOL() { return p < [a count]; } copy] *)
@@ -1659,41 +1659,37 @@ and generateExpression ctx e =
 		ctx.writer#write "@throw ";
 		generateValue ctx e;
 		(* ctx.writer#write ";"; *)
-	(* | TVars [] ->
-		()
-	| TVars vl ->
+	| TVar (v,eo) ->
 		(* Local vars declaration *)
 		ctx.generating_var <- true;
-		concat ctx "; " (fun (v,eo) ->
-			let t = (typeToString ctx v.v_type e.epos) in
-			if isPointer t then ctx.writer#new_line;
-			ctx.writer#write (Printf.sprintf "%s %s%s" t (addPointerIfNeeded t) (remapKeyword v.v_name));
-			(* Check if this Type is a Class and if it's imported *)
-			(match v.v_type with
-			| TMono r -> (match !r with None -> () | Some t -> 
-				match t with
-				| TInst (c,_) ->
-					(* ctx.imports_manager#add_class_path c.cl_path; *)
-					ctx.imports_manager#add_class c
-				| _ -> ())
-			| _ -> ());
-			match eo with
-			| None -> ()
-			| Some e ->
-				ctx.writer#write " = ";
-				(* Cast values in order for Xcode to ignore the warnings *)
-				(* (match e.eexpr with
-					| TArrayDecl _ -> ()
-					| _ -> (match t with
-						| "NSMutableArray" -> ctx.writer#write "(NSMutableArray*)";
-						| "NSString" -> ctx.writer#write "(NSString*)";
-						| _ -> ()
-					)
-				); *)
-				generateValue ctx e
-		) vl;
-		(* if List.length vl == 1 then ctx.writer#write ";"; *)
-		ctx.generating_var <- false; *)
+     	let t = (typeToString ctx v.v_type e.epos) in
+		if isPointer t then ctx.writer#new_line;
+		ctx.writer#write (Printf.sprintf "%s %s%s" t (addPointerIfNeeded t) (remapKeyword v.v_name));
+		(* Check if this Type is a Class and if it's imported *)
+		(match v.v_type with
+		| TMono r -> (match !r with None -> () | Some t -> 
+			match t with
+			| TInst (c,_) ->
+				(* ctx.imports_manager#add_class_path c.cl_path; *)
+				ctx.imports_manager#add_class c
+			| _ -> ())
+		| _ -> ());
+		begin match eo with
+		| None -> ()
+		| Some e ->
+			ctx.writer#write " = ";
+			(* Cast values in order for Xcode to ignore the warnings *)
+			(* (match e.eexpr with
+				| TArrayDecl _ -> ()
+				| _ -> (match t with
+					| "NSMutableArray" -> ctx.writer#write "(NSMutableArray*)";
+					| "NSString" -> ctx.writer#write "(NSString*)";
+					| _ -> ()
+				)
+			); *)
+			generateValue ctx e;
+		end;
+		ctx.generating_var <- false
 	| TNew (c,params,el) ->
 		(* | TNew of tclass * tparams * texpr list *)
 		(* ctx.writer#write ("GEN_NEW>"^(snd c.cl_path)^(string_of_int (List.length params))); *)
@@ -1927,6 +1923,7 @@ and generateExpression ctx e =
 		ctx.writer#write "-TMeta-";
 		generateValue ctx e
 		(* generateExpression ctx (Codegen.default_cast ctx.common_ctx e1 t e.etype e.epos) *)
+	| _ -> ctx.writer#write "->>>>>>>>>>>>>>-"
 
 and generateCaseBlock ctx e =
 	match e.eexpr with
@@ -2071,7 +2068,7 @@ let generateProperty ctx field pos is_static =
 	(* let class_name = (snd ctx.class_def.cl_path) in *)
 	if ctx.generating_header then begin
 		if is_static then begin
-			ctx.writer#write ("+ ("^t^(addPointerIfNeeded t)^") "^id^";\n");
+			ctx.writer#write ("+ ("^t^(addPointerIfNeeded t)^")"^id^";\n");
 			ctx.writer#write ("+ (void) set"^(String.capitalize id)^":("^t^(addPointerIfNeeded t)^")val;")
 		end
 	else begin
@@ -2099,7 +2096,7 @@ let generateProperty ctx field pos is_static =
 			| None -> ()
 			| Some e -> generateValue ctx e in
 			ctx.writer#write ("static "^t^(addPointerIfNeeded t)^" "^id^";
-+ ("^t^(addPointerIfNeeded t)^") "^id^" {
++ ("^t^(addPointerIfNeeded t)^")"^id^" {
 	if ("^id^" == nil) "^id^" = ");
 			gen_init_value();
 			ctx.writer#write (";
@@ -2120,7 +2117,7 @@ let generateProperty ctx field pos is_static =
 				if (Meta.has Meta.GetterBody field.cf_meta) then begin
 					
 					ctx.writer#write ("// Getters/setters for property: "^id^"\n");
-					ctx.writer#write ("- ("^t^(addPointerIfNeeded t)^") "^id^" { "^(getFirstMetaValue Meta.GetterBody field.cf_meta)^" }\n");
+					ctx.writer#write ("- ("^t^(addPointerIfNeeded t)^")"^id^" { "^(getFirstMetaValue Meta.GetterBody field.cf_meta)^" }\n");
 					ctx.writer#write ("- (void) set"^(String.capitalize id)^":("^t^(addPointerIfNeeded t)^")val { nil; }\n");
 				end else
 					ctx.writer#write ("// Please provide a getterBody for the property: "^id^"\n");

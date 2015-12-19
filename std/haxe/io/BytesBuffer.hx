@@ -137,8 +137,8 @@ class BytesBuffer {
 	}
 
 	public #if flash inline #end function addInt64( v : haxe.Int64 ) {
-		addInt32(v.low);
-		addInt32(v.high);
+		/*addInt32(v.low);
+		addInt32(v.high);*/
 	}
 
 	public inline function addFloat( v : Float ) {

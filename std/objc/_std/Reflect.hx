@@ -46,7 +46,7 @@
 		o.setValue (value, field);//[object setValue: value forKey: key];
 	}
 
-	public static function callMethod( o : Dynamic, func : Dynamic, args : Array<Dynamic> ) : Dynamic untyped {
+	public static function callMethod( o : Dynamic, func : haxe.Constraints.Function, args : Array<Dynamic> ) : Dynamic untyped {
 		if (func!=null && func.hx_get_type() == __global__.vtString)
 			func = o.hx_field(func,true);
 		untyped func.hx_set_this(o);
