@@ -1179,7 +1179,7 @@ and generateExpression ctx e =
 		end else begin
 			(* Cast the result *)
 			let pointer = ref false in
-			ctx.writer#write "((id";
+			(* ctx.writer#write "((id"; *)
 			(*ctx.writer#write ctx.type_of_generated_var;
 			(match e1.etype with
 				| TMono t  -> (* ctx.writer#write "CASTTMono"; *)
@@ -1247,11 +1247,13 @@ and generateExpression ctx e =
 					ctx.writer#write ctx.type_of_generated_var;(* (snd a.a_path); *)
 				| _ -> ctx.writer#write "CASTOther";
 			);*)
-			ctx.writer#write ((if !pointer then " *" else "")^")[");
+			(* ctx.writer#write ((if !pointer then " *" else "")^")["); *)
+			ctx.writer#write ("[");
 			generateValue ctx e1;
 			ctx.writer#write " hx_objectAtIndex:";
 			generateValue ctx e2;
-			ctx.writer#write "])";
+			(* ctx.writer#write "])"; *)
+			ctx.writer#write "]";
 		end
 	| TBinop (Ast.OpEq,e1,e2) when (match isSpecialCompare e1 e2 with Some c -> true | None -> false) ->
 		ctx.writer#write "binop";
