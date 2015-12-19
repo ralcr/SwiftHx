@@ -275,6 +275,7 @@ type context = {
 	mutable handle_break : bool;
 	mutable generating_header : bool;
 	mutable generating_var : bool;
+	mutable type_of_generated_var : string;
 	mutable generating_objc_block : bool;
 	mutable generating_objc_block_asign : bool;
 	mutable generating_object_declaration : bool;
@@ -312,6 +313,7 @@ let newContext common_ctx writer imports_manager file_info = {
 	handle_break = false;
 	generating_header = false;
 	generating_var = false;
+	type_of_generated_var = "";
 	generating_objc_block = false;
 	generating_objc_block_asign = false;
 	generating_object_declaration = false;
@@ -536,7 +538,7 @@ let remapHaxeTypeToObjc ctx is_static path pos =
 		| "Bool" -> "BOOL"
 		| "String" -> "NSString"
 		| "Date" -> "NSDate"
-		| "Array" -> "NSMutableArray"
+		| "Array" -> "NSMutableArray<id>"
 		| "Void" -> "void"
 		| _ -> name)
 	| (pack,name) ->
@@ -1176,15 +1178,16 @@ and generateExpression ctx e =
 			generateValue ctx e2;
 		end else begin
 			(* Cast the result *)
-			let pointer = ref true in
-			ctx.writer#write "((";
+			let pointer = ref false in
+			ctx.writer#write "((id";
+			(*ctx.writer#write ctx.type_of_generated_var;
 			(match e1.etype with
 				| TMono t  -> (* ctx.writer#write "CASTTMono"; *)
 						(match !t with
-							| Some tt ->(* ctx.writer#write "-TMonoSome-"; *)
+							| Some tt ->ctx.writer#write "-TMonoSome-";
 								
-								(match tt with
-								| TMono t -> ctx.writer#write "CASTTMono";
+								(* (match tt with
+								| TMono t -> ctx.writer#write "CASTTMono1";
 								| TEnum _ -> ctx.writer#write "CASTTenum";
 								| TInst (tc, tp) ->
 									(* let t = (typeToString ctx e.etype e.epos) in *)
@@ -1198,16 +1201,18 @@ and generateExpression ctx e =
 								| TDynamic _ -> ctx.writer#write "TArrayCASTTDynamic";
 								| TLazy _ -> ctx.writer#write "CASTTLazyExpr";
 								| TAbstract _ -> ctx.writer#write "CASTTAbstract";
-								);
-								(* let ttt = (typeToString ctx e.etype e.epos) in
-								ctx.writer#write (remapHaxeTypeToObjc ctx false tt.cl_path e.epos);
-								ctx.writer#write (typeToString ctx tt e.epos); *)
+								); *)
+								let ttt = (typeToString ctx e.etype e.epos) in
+								(* ctx.writer#write (remapHaxeTypeToObjc ctx false tt.cl_path e.epos); *)
+								(* ctx.writer#write (typeToString ctx tt e.epos); *)
+								ctx.type_of_generated_var <- (typeToString ctx tt e.epos);
+								()
 							| None -> ctx.writer#write "-TMonoNone-";()
 						)
 				| TEnum _ -> ctx.writer#write "CASTTenum";
-				| TInst (tc, tp) ->
+				| TInst (tc, tp) -> ctx.writer#write "CASTTInst";
 					List.iter (fun tt -> (match tt with
-						| TMono t -> ctx.writer#write "CASTTMono";
+						| TMono t -> ctx.writer#write "CASTTMono2";
 							(match !t with
 								| Some tt ->(* ctx.writer#write "-TMonoSome-"; *)
 									(* let ttt = (typeToString ctx e.etype e.epos) in *)
@@ -1228,7 +1233,9 @@ and generateExpression ctx e =
 							ctx.writer#write n;
 							pointer := isPointer n;
 						| TLazy _ -> ctx.writer#write "CASTTLazyExprInst";
-						| TAbstract _ -> ctx.writer#write "CASTTAbstract";
+						| TAbstract (a,_) -> 
+							ctx.writer#write "CASTTAbstract1";
+							ctx.writer#write (snd a.a_path);
 					);
 					)tp;
 				| TType (td,tp) -> ctx.writer#write (snd td.t_path);
@@ -1236,10 +1243,11 @@ and generateExpression ctx e =
 				| TAnon _ -> ctx.writer#write "CASTTAnon";
 				| TDynamic _ -> ctx.writer#write "TArray3TDynamic";
 				| TLazy _ -> ctx.writer#write "id"; pointer := false;
-				| TAbstract _ -> ctx.writer#write "CASTTAbstract";
+				| TAbstract (a,_) -> (* This is the cast to an array element *)
+					ctx.writer#write ctx.type_of_generated_var;(* (snd a.a_path); *)
 				| _ -> ctx.writer#write "CASTOther";
-			);
-			ctx.writer#write ((if !pointer then "*" else "")^")[");
+			);*)
+			ctx.writer#write ((if !pointer then " *" else "")^")[");
 			generateValue ctx e1;
 			ctx.writer#write " hx_objectAtIndex:";
 			generateValue ctx e2;
@@ -1422,7 +1430,8 @@ and generateExpression ctx e =
 					| TEnum (e,tl) -> ctx.writer#write "-TEnum"
 					| TInst (c,tl) -> ctx.writer#write "-TInst"
 					| TType (t,tl) -> ctx.writer#write "-TType"
-					| TAbstract (a,tl) -> ctx.writer#write "-TAbstract"
+					| TAbstract (a,tl) -> ctx.writer#write "-TAbstract";
+						ctx.writer#write (snd a.a_path); (* a.a_module.m_path (List.map convert_type pl) *)
 					| TAnon a -> ctx.writer#write "-TAnon-"
 					| TDynamic t2 -> ctx.writer#write "-TDynamic-"
 					| TLazy f -> ctx.writer#write "-TLazy call-"
@@ -1664,6 +1673,7 @@ and generateExpression ctx e =
 		ctx.generating_var <- true;
      	let t = (typeToString ctx v.v_type e.epos) in
 		if isPointer t then ctx.writer#new_line;
+		ctx.type_of_generated_var <- t;
 		ctx.writer#write (Printf.sprintf "%s %s%s" t (addPointerIfNeeded t) (remapKeyword v.v_name));
 		(* Check if this Type is a Class and if it's imported *)
 		(match v.v_type with

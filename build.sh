@@ -11,8 +11,8 @@ cd ../hxcocoa/demos/Hello
 # cd ../Busses
 # ./../../../haxe/haxe compile.hxml
 
-# cd ../PiratePig
-# ./../../../haxe/haxe compile.hxml
+cd ../PiratePig
+./../../../haxe/haxe compile.hxml
 
 cd ../WWX
 ./../../../haxe/haxe compile.hxml
