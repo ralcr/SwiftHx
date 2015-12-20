@@ -1067,7 +1067,7 @@ and generateValueOpAsString ctx e =
 	| TConst c ->
 		ctx.writer#write (match c with
 			| TString s -> "@\"" ^ s ^ "\"";
-			| TInt i -> "[NSString stringWithFormat:@\"%i\", " ^ (Printf.sprintf "%ld" i) ^ "]";
+			| TInt i -> "[NSString stringWithFormat:@\"%li\", " ^ (Printf.sprintf "%ld" i) ^ "]";
 			| TFloat f -> "[NSString stringWithFormat:@\"%f\", " ^ (Printf.sprintf "%s" f) ^ "]";
 			| TBool b -> "";
 			| TNull -> "";
