@@ -995,12 +995,27 @@ let rec generateCall ctx (func:texpr) arg_list =
 			let index = ref 0 in
 			let rec gen et =
 			(match et with
-				| TFun (args, ret) ->
+				| TFun (args, ret) ->(* ctx.writer#write "|"; *)
 					(* let args_array_e = Array.of_list args in *)
 					if !index < (List.length args) then
 					List.iter ( fun (name, b, t) ->
 						(* print_endline (Printf.sprintf "%d %d %d" (!index) (List.length args) (List.length arg_list)); *)
 						(* ctx.generating_method_argument <- true; *)
+						(* ctx.writer#write (s_type_kind t); *)
+						(* Find the type of the argument *)
+						let require_pointer = match t with
+						| TMono r ->
+							begin match !r with
+								| None -> false
+								| Some t -> 
+									(match t with
+										| TAbstract(a,tl) -> (* ctx.writer#write (s_type_path a.a_path); *)
+											isPointer (s_type_path a.a_path);
+										| _ -> false);
+							end
+						| _ -> false in
+						ctx.require_pointer <- require_pointer;
+
 						if Array.length sel_arr > 0 then
 							ctx.writer#write (" "^sel_arr.(!index)^":")
 						else
@@ -1011,6 +1026,7 @@ let rec generateCall ctx (func:texpr) arg_list =
 						else
 							generateValue ctx args_array_e.(!index);
 						index := !index + 1;
+						ctx.require_pointer <- false;
 					) args;
 					(* ctx.generating_method_argument <- false; *)
 				(* Generated in Array *)
@@ -2084,7 +2100,7 @@ let generateProperty ctx field pos is_static =
 	if ctx.generating_header then begin
 		if is_static then begin
 			ctx.writer#write ("+ ("^t^(addPointerIfNeeded t)^")"^id^";\n");
-			ctx.writer#write ("+ (void) set"^(String.capitalize id)^":("^t^(addPointerIfNeeded t)^")val;")
+			ctx.writer#write ("+ (void)set"^(String.capitalize id)^":("^t^(addPointerIfNeeded t)^")val;")
 		end
 	else begin
 		let getter = match field.cf_kind with
