@@ -1001,32 +1001,35 @@ let rec generateCall ctx (func:texpr) arg_list =
 					List.iter ( fun (name, b, t) ->
 						(* print_endline (Printf.sprintf "%d %d %d" (!index) (List.length args) (List.length arg_list)); *)
 						(* ctx.generating_method_argument <- true; *)
-						(* ctx.writer#write (s_type_kind t); *)
+						(* ctx.writer#write ("\"-"^(s_type_kind t)^"-\""); *)
 						(* Find the type of the argument *)
 						let require_pointer = match t with
 						| TMono r ->
-							begin match !r with
+							(match !r with
 								| None -> false
 								| Some t -> 
 									(match t with
 										| TAbstract(a,tl) -> (* ctx.writer#write (s_type_path a.a_path); *)
-											isPointer (s_type_path a.a_path);
-										| _ -> false);
-							end
+											isPointer (snd a.a_path);
+										| _ -> false
+									)
+							)
 						| _ -> false in
-						ctx.require_pointer <- require_pointer;
+						(* ctx.require_pointer <- require_pointer; *)
 
 						if Array.length sel_arr > 0 then
 							ctx.writer#write (" "^sel_arr.(!index)^":")
 						else
 							ctx.writer#write (if !index = 0 then ":" else (" "^(remapKeyword name)^":"));
+						if require_pointer then ctx.writer#write ("@(");
 						(* TODO: inspect the bug, why is there a different number of arguments. In StringBuf *)
 						if !index >= (List.length arg_list) then
 							ctx.writer#write "nil"
 						else
 							generateValue ctx args_array_e.(!index);
+						if require_pointer then ctx.writer#write (")");
 						index := !index + 1;
-						ctx.require_pointer <- false;
+						(* ctx.require_pointer <- false; *)
 					) args;
 					(* ctx.generating_method_argument <- false; *)
 				(* Generated in Array *)
