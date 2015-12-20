@@ -53,8 +53,8 @@ private class Stdin extends haxe.io.Output {
 		return 0;
 	}
 
-	static var _stdin_write = cpp.Lib.load("std","process_stdin_write",4);
-	static var _stdin_close = cpp.Lib.load("std","process_stdin_close",1);
+	static var _stdin_write = null;//cpp.Lib.load("std","process_stdin_write",4);
+	static var _stdin_close = null;//cpp.Lib.load("std","process_stdin_close",1);
 
 }
 
@@ -87,8 +87,8 @@ private class Stdout extends haxe.io.Input {
 		return result;
 	}
 
-	static var _stdout_read = cpp.Lib.load("std","process_stdout_read",4);
-	static var _stderr_read = cpp.Lib.load("std","process_stderr_read",4);
+	static var _stdout_read = null;//cpp.Lib.load("std","process_stdout_read",4);
+	static var _stderr_read = null;//cpp.Lib.load("std","process_stderr_read",4);
 
 }
 
@@ -123,9 +123,9 @@ class Process {
 		throw "Not implemented";
 	}
 
-	static var _run = cpp.Lib.load("std","process_run",2);
-	static var _exit = cpp.Lib.load("std","process_exit",1);
-	static var _pid = cpp.Lib.load("std","process_pid",1);
-	static var _close = cpp.Lib.loadLazy("std","process_close",1);
+	static var _run = null;//cpp.Lib.load("std","process_run",2);
+	static var _exit = null;//cpp.Lib.load("std","process_exit",1);
+	static var _pid = null;//cpp.Lib.load("std","process_pid",1);
+	static var _close = null;//cpp.Lib.loadLazy("std","process_close",1);
 
 }

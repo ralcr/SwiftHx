@@ -2,14 +2,11 @@ clear
 make haxe
 
 echo " "
-echo "Build CocoaTouch demos..."
+echo "Build demos..."
 echo " "
 
 cd ../hxcocoa/demos/Hello
 ./../../../haxe/haxe compile.hxml
-
-# cd ../Busses
-# ./../../../haxe/haxe compile.hxml
 
 cd ../PiratePig
 ./../../../haxe/haxe compile.hxml

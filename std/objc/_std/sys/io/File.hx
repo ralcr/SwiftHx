@@ -33,7 +33,7 @@ class File {
 	}
 
 	public static function getBytes( path : String ) : haxe.io.Bytes {
-		var data:haxe.io.BytesData = file_contents(path);
+		var data:haxe.io.BytesData;// = file_contents(path);
 		return haxe.io.Bytes.ofData(data);
 	}
 
@@ -50,15 +50,15 @@ class File {
 	}
 
 	public static function read( path : String, binary : Bool = true ) : FileInput {
-		return untyped new FileInput(file_open(path,(if( binary ) "rb" else "r")));
+		return null;//untyped new FileInput(file_open(path,(if( binary ) "rb" else "r")));
 	}
 
 	public static function write( path : String, binary : Bool = true ) : FileOutput {
-		return untyped new FileOutput(file_open(path,(if( binary ) "wb" else "w")));
+		return null;//untyped new FileOutput(file_open(path,(if( binary ) "wb" else "w")));
 	}
 
 	public static function append( path : String, binary : Bool = true ) : FileOutput {
-		return untyped new FileOutput(file_open(path,(if( binary ) "ab" else "a")));
+		return null;//untyped new FileOutput(file_open(path,(if( binary ) "ab" else "a")));
 	}
 
 	public static function copy( src : String, dst : String ) : Void {
@@ -68,9 +68,4 @@ class File {
 		s.close();
 		d.close();
 	}
-
-	private static var file_contents = cpp.Lib.load("std","file_contents",1);
-	private static var file_open = cpp.Lib.load("std","file_open",2);
-
-
 }

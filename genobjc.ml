@@ -376,7 +376,7 @@ let rec isString ctx e =
 	(* TODO: left side of the binop is never discovered as being string *)
 	(* ctx.writer#write ("\"-CHECK ISSTRING-\""); *)
 	(match e.eexpr with
-	| TBinop (op,e1,e2) -> (* ctx.writer#write ("\"-redirect check isString-\""); *) isString ctx e1 or isString ctx e2
+	| TBinop (op,e1,e2) -> (* ctx.writer#write ("\"-redirect check isString-\""); *) isString ctx e1 || isString ctx e2
 	| TLocal v ->
 		(* ctx.writer#write ("\"-check local-\""); *)
 		(match v.v_type with
@@ -519,12 +519,12 @@ let rec isArray e =
 (* 'id' is a pointer but does not need to specify it *)
 let isPointer t =
 	match t with
-	| "void" | "id" | "BOOL" | "int" | "uint" | "float" | "CGRect" | "CGPoint" | "CGSize" | "SEL" | "CGImageRef" -> false
+	| "void" | "id" | "BOOL" | "int" | "uint" | "NSInteger" | "NSUInteger" | "float" | "CGFloat" | "CGRect" | "CGPoint" | "CGSize" | "SEL" | "CGImageRef" -> false
 	| _ -> true
 	(* TODO: enum is not pointer *)
 ;;
 let addPointerIfNeeded t =
-	if (isPointer t) then " *" else ""
+	if (isPointer t) then "*" else ""
 ;;
 
 (* Generating correct type *)
@@ -532,8 +532,8 @@ let remapHaxeTypeToObjc ctx is_static path pos =
 	match path with
 	| ([],name) ->
 		(match name with
-		| "Int" -> "int"
-		| "Float" -> "float"
+		| "Int" -> "NSInteger"
+		| "Float" -> "CGFloat"
 		| "Dynamic" -> "id"
 		| "Bool" -> "BOOL"
 		| "String" -> "NSString"
@@ -569,7 +569,7 @@ let remapKeyword name =
 	| x -> x
 
 let appName ctx =
-	(* The name of the main class is the name of the app.  *)
+	(* The name of the main class is the name of the app. *)
 	match ctx.main_class with
 	| Some path -> (snd path)
 	| _ -> "HaxeCocoaApp"
@@ -656,18 +656,18 @@ let rec typeToString ctx t p =
 	| TType (t,args) ->
 		(* ctx.writer#write "?TType?"; *)
 		(match t.t_path with
-		| [], "UInt" -> "uint"
+		| [], "UInt" -> "NSUInteger"
 		| [] , "Null" ->
 			(match args with
 			| [t] ->
 				(* Saw it generated in the function optional arguments *)
 				(match follow t with
-				| TAbstract ({ a_path = [],"UInt" },_) -> "int"
-				| TAbstract ({ a_path = [],"Int" },_) -> "int"
-				| TAbstract ({ a_path = [],"Float" },_) -> "float"
+				| TAbstract ({ a_path = [],"UInt" },_) -> "NSUInteger"
+				| TAbstract ({ a_path = [],"Int" },_) -> "NSInteger"
+				| TAbstract ({ a_path = [],"Float" },_) -> "CGFloat"
 				| TAbstract ({ a_path = [],"Bool" },_) -> "BOOL"
-				| TInst ({ cl_path = [],"Int" },_) -> "int"
-				| TInst ({ cl_path = [],"Float" },_) -> "float"
+				| TInst ({ cl_path = [],"Int" },_) -> "NSInteger"
+				| TInst ({ cl_path = [],"Float" },_) -> "CGFloat"
 				| TEnum ({ e_path = [],"Bool" },_) -> "BOOL"
 				| _ -> typeToString ctx t p)
 			| _ -> assert false);
@@ -754,20 +754,22 @@ let generateConstant ctx p = function
 		(* if ctx.generating_string_append > 0 then
 			ctx.writer#write (Printf.sprintf "@\"%ld\"" i)
 		else *) if ctx.require_pointer then
-			ctx.writer#write (Printf.sprintf "@%ld" i) (* %ld = int32 = (Int32.to_string i) *)
+			ctx.writer#write (Printf.sprintf "@(%ld)" i) (* %ld = int32 = (Int32.to_string i) *)
 		else
 			ctx.writer#write (Printf.sprintf "%ld" i)
 	| TFloat f ->
 		(* if ctx.generating_string_append > 0 then
 			ctx.writer#write (Printf.sprintf "@\"%s\"" f)
 		else *) if ctx.require_pointer then
-			ctx.writer#write (Printf.sprintf "@%s" f)
+			ctx.writer#write (Printf.sprintf "@(%s)" f)
 		else
 			ctx.writer#write f
 	| TString s -> ctx.writer#write (Printf.sprintf "@\"%s\"" (Ast.s_escape s))
 	| TBool b -> ctx.writer#write (if b then "YES" else "NO")
 	| TNull -> ctx.writer#write (if ctx.require_pointer then "[NSNull null]" else "nil")
-	| TThis -> ctx.writer#write "self"; ctx.generating_self_access <- true
+	| TThis -> 
+		ctx.writer#write (if ctx.require_pointer then "@(self" else "self");
+		ctx.generating_self_access <- true
 	| TSuper -> ctx.writer#write "super"
 ;;
 
@@ -1273,7 +1275,7 @@ and generateExpression ctx e =
 		(* if isString ctx e2 then ctx.writer#write ("\"-isString2-\""); *)
 		
 		
-		if (s_op="+" or s_op="+=") && (isString ctx e1 or isString ctx e2) then begin
+		if (s_op="+" || s_op="+=") && (isString ctx e1 || isString ctx e2) then begin
 			ctx.generating_string_append <- ctx.generating_string_append + 1;
 			(match s_op with
 				| "+" ->
@@ -1300,7 +1302,7 @@ and generateExpression ctx e =
 			generateValueOp ctx e2;
 			ctx.require_pointer <- false;
 			ctx.writer#write "]";
-		end else if (s_op="==") && (isString ctx e1 or isString ctx e2) then begin
+		end else if (s_op="==") && (isString ctx e1 || isString ctx e2) then begin
 			ctx.writer#write "[";
 			generateValueOp ctx e1;
 			ctx.writer#write " isEqual:";
@@ -1344,6 +1346,7 @@ and generateExpression ctx e =
 			else if (ctx.generating_self_access && ctx.generating_calls>0) then " " else "." in
 			ctx.writer#write (fan^(if ctx.generating_custom_selector then "" else f_prefix^(remapKeyword (field_name fa))));
 			ctx.generating_property_access <- false;
+			if ctx.require_pointer then ctx.writer#write ")";
 			
 		| FStatic (cls, cls_f) -> (* ctx.writer#write "-FStatic-"; *)
 			(match cls_f.cf_type with
@@ -2365,7 +2368,7 @@ let generateField ctx is_static field =
 			ctx.writer#write ";\n";
 			
 		if ctx.generating_header then begin
-			ctx.writer#write (Printf.sprintf "@property (nonatomic,copy) ");
+			ctx.writer#write (Printf.sprintf "@property (nonatomic, copy) ");
 			let h = generateFunctionHeader ctx (Some (field.cf_name, field.cf_meta)) field.cf_meta func field.cf_params pos is_static HeaderDynamic in h();
 			ctx.writer#write ";";
 		end else begin
