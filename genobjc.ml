@@ -2035,10 +2035,10 @@ and generateValue ctx e =
 		generateValue ctx e1
 		| Some t -> () *)
 		(* generateValue ctx (match t with None -> e1 | Some t -> Codegen.default_cast ctx.com e1 t e.etype e.epos) *)
-	| TReturn _
-	| TBreak
-	| TContinue ->
-		unsupported e.epos
+	| TReturn _ -> ctx.writer#write ""
+	| TBreak -> ctx.writer#write ""
+	| TContinue -> ctx.writer#write ""
+		(* unsupported e.epos *)
 	| TFor _
 	| TWhile _
 	| TThrow _ ->
