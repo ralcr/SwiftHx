@@ -22,6 +22,7 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
  * DAMAGE.
  */
+import objc.foundation.NSProcessInfo;
 
 @:coreApi class Sys {
 
@@ -50,8 +51,8 @@
 		return 0;//getch(echo);
 	}
 
-	public static function args() : Array<String> untyped {
-		return null;//__global__.__get_args();
+	public static function args() : Array<String> {
+		return NSProcessInfo.processInfo().arguments();
 	}
 
 	public static function getEnv( s : String ):String {
