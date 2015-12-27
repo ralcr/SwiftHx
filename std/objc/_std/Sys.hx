@@ -23,6 +23,7 @@
  * DAMAGE.
  */
 import objc.foundation.NSProcessInfo;
+import objc.foundation.NSBundle;
 
 @:coreApi class Sys {
 
@@ -121,8 +122,8 @@ import objc.foundation.NSProcessInfo;
 		return 0;//sys_cpu_time();
 	}
 
-	public static function executablePath() : String {
-		return null;//new String(sys_exe_path());
+	public static function executablePath() : String untyped {
+		return NSBundle.mainBundle().bundlePath().stringByDeletingLastPathComponent();
 	}
 
 	public static function environment() : Map<String,String> {

@@ -63,14 +63,18 @@ class FileSystem {
 		return null;
 	}
 	
-	static function kind( path : String ) : FileKind {
-		var isDir :Bool = false;
-		NSFileManager.defaultManager().fileExistsAtPath (path, isDir);
-		return switch (isDir) {
-			case false: kfile;
-			case true: kdir;
-			//default: kother(k);
-		}
+	// static function kind( path : String ) : FileKind {
+	// 	var isDir :Bool = false;
+	// 	NSFileManager.defaultManager().fileExistsAtPath (path, isDir);
+	// 	return switch (isDir) {
+	// 		case false: kfile;
+	// 		case true: kdir;
+	// 		//default: kother(k);
+	// 	}
+	// }
+
+	public static function absolutePath( relPath : String ) : String {
+		return null;
 	}
 	
 	public static function isDirectory( path : String ) : Bool {
